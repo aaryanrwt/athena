@@ -52,7 +52,9 @@ def resolve_ollama_model_name(
                 return True, installed, None
         return False, model, f"Model '{model}' not found in local Ollama tags ({models})."
     except Exception as exc:
-        return False, model, f"Ollama unreachable at {base_url}: {type(exc).__name__}: {exc}"
+        detail = redact_secrets(f"{type(exc).__name__}: {exc}")
+        safe_url = redact_secrets(base_url)
+        return False, model, f"Ollama unreachable at {safe_url}: {detail}"
 
 
 def check_ollama_model_ready(
@@ -297,8 +299,8 @@ def _evict_other_loaded_models(base_url: str, target_model: str) -> None:
                         json={"model": m_name, "keep_alive": 0},
                         timeout=5.0,
                     )
-    except Exception:
-        pass
+    except (httpx.HTTPError, TypeError, ValueError):
+        return
 
 
 def _build_llm_change_prompt(
@@ -540,8 +542,9 @@ def analyze_changes_with_ollama(
         return final_stories, det_breaking, f"ollama:{resolved_model}", total_stripped, warnings
 
     except Exception as exc:
+        safe_detail = redact_secrets(f"{type(exc).__name__}: {exc}")
         warnings.append(
-            f"Ollama inference failed or timed out ({type(exc).__name__}: {exc}); used deterministic AST/diff fallback."
+            f"Ollama inference failed or timed out ({safe_detail}); used deterministic AST/diff fallback."
         )
         return det_stories, det_breaking, "fallback_deterministic", stripped_brk_init, warnings
 

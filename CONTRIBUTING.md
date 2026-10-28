@@ -36,8 +36,12 @@ pip install -e ".[dev]"
 Always run the deterministic test suite before opening a Pull Request:
 
 ```bash
-# Run full unit, MCP protocol, and real-world AST/Git edge-case suite
-python -m pytest -v
+# Run the default offline unit, protocol, and real-world AST/Git suite
+python -m pytest -v -m "not ollama"
+
+# Opt in to the live local Ollama integration test
+# Linux/macOS: ATHENA_RUN_OLLAMA_TESTS=1 python -m pytest -v -m ollama
+# PowerShell: $env:ATHENA_RUN_OLLAMA_TESTS = "1"; python -m pytest -v -m ollama
 
 # Run the 19-scenario precision/recall quality benchmark
 python tests/evaluation/run_quality_benchmark.py
@@ -51,7 +55,7 @@ When contributing changes to `src/athena/`, please preserve Athena's core invari
 
 1. **Deterministic-First (Mode A)**: Every analysis feature must work 100% offline with 0ms LLM dependency. Local Ollama enhancement (Mode B) is strictly optional and must gracefully fall back to deterministic output (Mode C) on timeout or malformed JSON.
 2. **Ground-Truth Evidence**: Every reported `ChangeStory` and `BreakingChangeFinding` must attach verified `EvidenceRecord` citations (40-char commit SHA, file path, exact base/target line spans, and diff hunk excerpt).
-3. **Read-Only & Sandbox-Safe**: Athena must never mutate the target repository, never execute untrusted repository code during static analysis, and always validate paths/refs through `src/athena/security.py`.
+3. **Sandbox-Safe**: Analysis must never mutate the target repository or execute repository code. Release tools may write only to an explicitly requested, validated output path and must disclose that capability through MCP annotations.
 4. **Regression Test Coverage**: Every bug fix or new AST contract rule should include a deterministic regression test in `tests/test_real_world_edge_cases.py`.
 
 ---

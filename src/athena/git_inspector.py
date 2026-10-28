@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
-import subprocess
+# Git is invoked with a fixed executable, shell=False, and validated revisions.
+import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -104,8 +106,19 @@ def run_git_command(
         "color.ui=never",
         *args,
     ]
+    git_env = os.environ.copy()
+    git_env.update(
+        {
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_ASKPASS": "",
+            # Static analysis must never turn a blobless clone into an implicit
+            # network operation. Missing promised objects are reported instead.
+            "GIT_NO_LAZY_FETCH": "1",
+        }
+    )
     try:
-        proc = subprocess.run(
+        # User-controlled revisions are validated before reaching this shell-free call.
+        proc = subprocess.run(  # nosec B603
             cmd,
             cwd=str(repo_path),
             shell=False,
@@ -114,6 +127,7 @@ def run_git_command(
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            env=git_env,
         )
     except subprocess.TimeoutExpired:
         if check:
@@ -124,7 +138,7 @@ def run_git_command(
         return subprocess.CompletedProcess(cmd, returncode=124, stdout="", stderr=f"Timed out after {timeout}s")
 
     if check and proc.returncode != 0:
-        stderr_clean = (proc.stderr or proc.stdout or "").strip()
+        stderr_clean = redact_secrets((proc.stderr or proc.stdout or "").strip())
         raise AthenaValidationError(
             "GIT_COMMAND_FAILED",
             f"Git command failed ({' '.join(args[:3])}): {stderr_clean}",
@@ -254,7 +268,13 @@ def _parse_commits_log(repo_path: Path, rev_spec: str | list[str], max_count: in
             timeout=20,
             check=False,
         )
-    if proc2.returncode != 0 or not proc2.stdout.strip():
+    if proc2.returncode != 0:
+        stderr_clean = redact_secrets((proc2.stderr or proc2.stdout or "").strip())
+        raise AthenaValidationError(
+            "GIT_HISTORY_EXTRACTION_FAILED",
+            f"Git history extraction failed: {stderr_clean or 'unknown Git error'}",
+        )
+    if not proc2.stdout.strip():
         return []
 
     for chunk in proc2.stdout.split("==COMMIT_START==\n"):
@@ -620,7 +640,7 @@ def extract_revision_range_data(
     # Extract file statuses (omit -M on partial/blobless clones so Git performs a 100% local tree comparison without fetching blobs for rename similarity!)
     is_partial = _is_promisor_partial_clone(repo_path)
     diff_target_args = [base_sha] if target_sha == "WORKING_TREE" else [base_sha, target_sha]
-    ns_flags = ["--name-status", "--no-ext-diff", "--color=never"]
+    ns_flags = ["--name-status", "--no-ext-diff", "--no-textconv", "--color=never"]
     if not is_partial:
         ns_flags.insert(1, "-M")
     name_status_proc = run_git_command(
@@ -633,7 +653,7 @@ def extract_revision_range_data(
             "--",
         ],
         timeout=30,
-        check=False,
+        check=True,
     )
 
     # Pre-collect non-lockfile paths from name_status and rank core production code files first (BUG-031)
@@ -682,6 +702,7 @@ def extract_revision_range_data(
     diff_flags = [
         "--ignore-cr-at-eol",
         "--no-ext-diff",
+        "--no-textconv",
         "--color=never",
         "--src-prefix=a/",
         "--dst-prefix=b/",
@@ -708,7 +729,7 @@ def extract_revision_range_data(
                 *(["--", *path_filter_args] if path_filter_args else ["--"]),
             ],
             timeout=25,
-            check=False,
+            check=True,
         )
         parsed_diffs = _parse_unified_diff_by_file(full_diff_proc.stdout)
     batched_partial_paths = set(path_filter_args)
@@ -733,8 +754,6 @@ def extract_revision_range_data(
     changed_files: list[ChangedFileDelta] = []
     base_blobs: dict[str, str] = {}
     target_blobs: dict[str, str] = {}
-    is_head_target = target_ref.strip().upper() in ("HEAD", "WORKING_TREE")
-
     for line in name_status_proc.stdout.splitlines():
         if not line.strip():
             continue
@@ -850,7 +869,7 @@ def extract_revision_range_data(
                     base_blobs[file_path] = b_blob
             if status_lit in ("added", "modified", "renamed"):
                 t_blob: str | None = None
-                if is_head_target:
+                if target_sha == "WORKING_TREE":
                     wt_candidate = repo_path / file_path
                     if wt_candidate.exists() and wt_candidate.is_file() and is_safe_repo_file(repo_path, wt_candidate):
                         try:
@@ -858,7 +877,7 @@ def extract_revision_range_data(
                                 t_blob = wt_candidate.read_text(encoding="utf-8", errors="replace")
                         except OSError:
                             t_blob = None
-                if t_blob is None and not is_partial:
+                if t_blob is None and target_sha != "WORKING_TREE":
                     t_blob = read_blob_at_revision(repo_path, target_sha, file_path)
                 if t_blob is not None:
                     target_blobs[file_path] = t_blob

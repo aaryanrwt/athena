@@ -16,25 +16,33 @@ env:
 
 jobs:
   test-and-verify:
-    name: Run Deterministic AST, Security & MCP Protocol Suite (Python 3.14)
+    name: Offline Suite (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
 
     steps:
       - name: Checkout Repository (Full History for Git Revision Tests)
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      - name: Set up Python 3.14 (2026 Release)
-        uses: actions/setup-python@v5
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
           cache: "pip"
 
       - name: Install Athena & Test Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          python -m pip install -e ".[dev]"
+
+      - name: Verify MCP 1.x Compatibility Floor
+        if: matrix.python-version == '3.12'
+        run: python -m pip install "mcp==1.26.0"
 
       - name: Configure Git Identity for Test Sandbox Repos
         run: |
@@ -42,8 +50,28 @@ jobs:
           git config --global user.email "athena-ci@users.noreply.github.com"
 
       - name: Run Unit, MCP Protocol & Real-World Edge-Case Tests
+        run: python -m pytest -v -m "not ollama" tests/test_athena_mvp.py tests/test_mcp_protocol.py tests/test_real_world_edge_cases.py
+
+      - name: Validate Wheel Build
+        if: matrix.python-version == '3.14'
+        run: python -m pip wheel . --no-deps --wheel-dir dist
+
+      - name: Audit Installed Dependencies & Generate CycloneDX SBOM
+        if: matrix.python-version == '3.14'
         run: |
-          python -m pytest -v tests/test_athena_mvp.py tests/test_mcp_protocol.py tests/test_real_world_edge_cases.py
+          python -m pip install -e ".[security]"
+          python -m pip_audit --local --skip-editable
+          python -m pip_audit --local --skip-editable --format cyclonedx-json --output dist/athena-sbom.cdx.json
+
+      - name: Upload Wheel & Security Artifacts
+        if: matrix.python-version == '3.14'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: athena-package-security-artifacts
+          path: |
+            dist/*.whl
+            dist/athena-sbom.cdx.json
+          retention-days: 14
 
   pr-change-audit:
     name: Athena PR Breaking-Change & Blast-Radius Audit
@@ -52,12 +80,12 @@ jobs:
 
     steps:
       - name: Checkout Repository with Full History
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Python 3.14 (2026 Release)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
           cache: "pip"
@@ -106,7 +134,7 @@ jobs:
           EOF
 
       - name: Upload Athena Audit Reports
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: athena-change-intelligence-reports
           path: |

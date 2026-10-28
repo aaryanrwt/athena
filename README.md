@@ -34,7 +34,7 @@ Athena is an open-source, local-first Model Context Protocol (MCP) server and de
    - **Mode B (Optional Local Ollama Enhancement)**: When requested (`--llm`, `use_llm=True`, or `ATHENA_ENABLE_LLM=1`), local Ollama (`gemma:latest` / `gemma:7b` or `qwen2.5-coder:7b`) enhances narrative explanations while strictly verifying evidence citations against deterministic ground truth. Includes automatic VRAM swap eviction for 6 GB GPUs.
    - **Mode C (Fault-Tolerant Fallback)**: If Ollama times out, returns malformed JSON, or is offline, Athena gracefully degrades to deterministic output with clear diagnostic warnings.
 8. **Drop-In GitHub Actions PR Audit Bot (`.github/workflows/athena-audit.yml`)**: Ships with a ready-to-use GitHub Actions workflow that runs the multi-Python test matrix and posts a structured Breaking-Change, Blast-Radius & Release Notes summary table directly to `$GITHUB_STEP_SUMMARY` on every Pull Request.
-9. **Private, Read-Only & Fully Annotated MCP Tools**: Athena declares explicit MCP `ToolAnnotations` (`readOnlyHint=True`, `destructiveHint=False`, `idempotentHint=True`, `openWorldHint=False`) on all 7 registered tools, never modifies your repository, never pushes code, and runs 100% locally on consumer hardware (verified on an NVIDIA RTX 4050 Laptop GPU with 6 GB VRAM and 16 GB RAM).
+9. **Private & Accurately Annotated MCP Tools**: Athena marks analysis tools read-only. Its two release tools disclose their optional file-writing capability and write only when `output_file` is explicitly supplied; they never commit or push code. Athena runs locally on consumer hardware (verified on an NVIDIA RTX 4050 Laptop GPU with 6 GB VRAM and 16 GB RAM).
 
 ---
 
@@ -163,7 +163,7 @@ For generic MCP clients using executable commands:
 
 ## Registered MCP Tools
 
-Athena exposes **7 read-only, schema-validated MCP tools**, each annotated with explicit MCP `ToolAnnotations` (`readOnlyHint=True`, `destructiveHint=False`, `idempotentHint=True`, `openWorldHint=False`):
+Athena exposes **7 schema-validated MCP tools**. Five analysis tools are annotated read-only. The two release tools are annotated as write-capable because they can create or replace an explicitly requested `output_file`:
 
 | MCP Tool Name | Primary Parameters | Description |
 | :--- | :--- | :--- |
@@ -543,16 +543,23 @@ Athena was rigorously evaluated against a dedicated 19-scenario ground-truth con
 - **Language AST & Structural Support**: Full AST contract and recursion defect analysis (parameter defaults, body guards, return types, exception raises, base classes, Enum members, public constants, recursive self-call arity, and infinite recursion base-case detection) is implemented for **Python**. Multi-language structural symbol, signature, parameter arity, visibility, export diffing, and recursive self-call arity analysis is supported for **TypeScript, JavaScript, C++, C, Go, Rust, Java, Kotlin, Scala, C#, Ruby, PHP, and Swift**.
 - **Inter-file Caller Resolution & Dynamic Dispatch**: Static caller analysis resolves callers across local modules within the same repository using import hierarchy tracking (including aliased imports and self-recursive calls) and verifies call-site argument arity. When reflection (`getattr`), dynamic imports (`importlib.import_module`), or bracket dispatch (`handlers[action]()`) are present, Athena explicitly flags them in `unresolved_dynamic_calls` and adjusts `analysis_coverage.overall_blast_radius_confidence` so reviewers know the exact boundary of static analysis.
 - **Read-Only Operation**: Athena does not write tags, create branches, or commit code to external repositories.
+- **Partial/Blobless Clones**: Athena disables implicit Git lazy-fetching during analysis. A partial clone must already contain the objects required for the requested range; otherwise Athena returns a Git extraction error instead of contacting its remote without explicit operator action.
 
 ---
 
 ## Running the Automated Test Suite
 
-Athena features a comprehensive automated test suite covering all functional capabilities, multi-language structural & recursive diffing, security boundaries, MCP stdio protocol roundtrips, recursive function edge cases, and live `gemma:latest` (Gemma 7B) & `qwen2.5-coder:7b` integration (**121 tests**):
+Athena has **128 tests** covering multi-language structural and recursive diffing, security boundaries, MCP stdio roundtrips, and real-world edge cases. The default offline run executes 127 tests and skips one explicitly opt-in live Ollama integration test:
 
 ```bash
-# Run complete test suite (121 tests across unit, protocol, and real-world edge cases)
+# Run the offline suite (127 passed, 1 live Ollama test skipped)
 python -m pytest -v
+
+# Optional live Ollama test (Linux/macOS)
+ATHENA_RUN_OLLAMA_TESTS=1 python -m pytest -v -m ollama
+
+# Optional live Ollama test (Windows PowerShell)
+$env:ATHENA_RUN_OLLAMA_TESTS = "1"; python -m pytest -v -m ollama
 
 # Run 19-scenario ground-truth semantic quality & Gemma 7B / Qwen 7B benchmark
 python tests/evaluation/run_quality_benchmark.py
@@ -568,6 +575,8 @@ python tests/evaluation/run_evaluation.py --manifest tests/evaluation/v1_1_multi
 - **Name**: Aaryan Rawat
 - **Email**: [`aaryan28rwt@gmail.com`](mailto:aaryan28rwt@gmail.com)
 - **GitHub**: [@aaryanrwt](https://github.com/aaryanrwt)
+- **Project history**: [`CHANGELOG.md`](CHANGELOG.md)
+- **Maintainer feedback and follow-up**: [`MAINTAINER_FEEDBACK.md`](MAINTAINER_FEEDBACK.md)
 
 ---
 

@@ -1381,9 +1381,9 @@ def count_recursive_functions_in_source(source: str, file_path: str) -> int:
 
 def _list_repo_files_at_target(repo_path: Path, target_sha: str) -> list[str]:
     if target_sha == "WORKING_TREE":
-        proc = run_git_command(repo_path, ["ls-files"], check=False)
+        proc = run_git_command(repo_path, ["ls-files"], check=True)
     else:
-        proc = run_git_command(repo_path, ["ls-tree", "-r", "--name-only", target_sha], check=False)
+        proc = run_git_command(repo_path, ["ls-tree", "-r", "--name-only", target_sha], check=True)
     if proc.returncode != 0:
         return []
     return [f.strip().replace("\\", "/") for f in proc.stdout.splitlines() if f.strip()]
@@ -1661,19 +1661,19 @@ def _scan_callers_and_tests_and_docs(
         if is_py or is_ts:
             total_code_eligible += 1
 
-        # Read file content from target_blobs cache, working tree, or target git revision
+        # A committed target is immutable: callers, tests, and docs must come from
+        # that exact tree even when the checkout has newer or dirty files.
         content = extraction.target_blobs.get(rel_path)
         if content is None:
-            candidate = repo_path / rel_path
-            if candidate.exists() and candidate.is_file():
-                if is_safe_repo_file(repo_path, candidate):
+            if target_sha == "WORKING_TREE":
+                candidate = repo_path / rel_path
+                if candidate.exists() and candidate.is_file() and is_safe_repo_file(repo_path, candidate):
                     try:
                         if candidate.stat().st_size <= 256 * 1024:
                             content = candidate.read_text(encoding="utf-8", errors="replace")
                     except OSError:
                         content = None
-            elif target_sha != "WORKING_TREE" and extraction.target_ref.strip().upper() != "HEAD":
-                # Only spawn git cat-file/show when analyzing a non-HEAD historical revision where file was deleted in working tree (BUG-015 / BUG-029)
+            else:
                 content = read_blob_at_revision(repo_path, target_sha, rel_path)
 
         if content is None:
@@ -2641,7 +2641,7 @@ def find_affected_callers_in_tree(
                                 resolution_confidence="exact_ast",
                             )
                         )
-        except Exception:
+        except (OSError, RecursionError, SyntaxError, ValueError):
             continue
     return callers
 

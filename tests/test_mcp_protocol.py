@@ -95,14 +95,25 @@ def test_mcp_server_tool_registration_and_unguarded_none_default(mcp_test_repo: 
             "generate_verified_release_brief",
         }.issubset(tool_names)
 
-        # Verify all 7 tools declare explicit boolean MCP ToolAnnotations (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
+        # Analysis tools are read-only. Release tools can create/replace an explicit output_file,
+        # so their MCP hints must disclose mutation and potential overwrite behavior.
         for t in tools:
             assert t.annotations is not None, f"Tool {t.name} missing annotations"
             dumped_ann = t.annotations.model_dump(by_alias=True)
-            assert dumped_ann["readOnlyHint"] is True, f"Tool {t.name} missing readOnlyHint=True"
-            assert dumped_ann["destructiveHint"] is False, f"Tool {t.name} missing destructiveHint=False"
-            assert dumped_ann["idempotentHint"] is True, f"Tool {t.name} missing idempotentHint=True"
-            assert dumped_ann["openWorldHint"] is False, f"Tool {t.name} missing openWorldHint=False"
+            if t.name in {"generate_release_notes", "generate_verified_release_brief"}:
+                assert dumped_ann["readOnlyHint"] is False
+                assert dumped_ann["destructiveHint"] is True
+                assert dumped_ann["idempotentHint"] is False
+            else:
+                assert dumped_ann["readOnlyHint"] is True, f"Tool {t.name} missing readOnlyHint=True"
+                assert dumped_ann["destructiveHint"] is False, f"Tool {t.name} missing destructiveHint=False"
+                assert dumped_ann["idempotentHint"] is True, f"Tool {t.name} missing idempotentHint=True"
+            if t.name == "inspect_repository":
+                assert dumped_ann["openWorldHint"] is False
+            else:
+                # Every analysis/release tool can optionally contact the configured
+                # Ollama endpoint when its LLM flag is explicitly enabled.
+                assert dumped_ann["openWorldHint"] is True
 
         res_brk = await mcp_app.call_tool(
             "detect_potential_breaking_changes",

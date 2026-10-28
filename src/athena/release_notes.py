@@ -22,7 +22,13 @@ from athena.ollama_engine import (
     DEFAULT_OLLAMA_MODEL,
     analyze_changes_with_ollama,
 )
-from athena.security import AthenaValidationError, validate_safe_output_path
+from athena.security import (
+    AthenaValidationError,
+    redact_model,
+    redact_secrets,
+    validate_safe_output_path,
+    write_text_safely,
+)
 
 VALID_AUDIENCES = {"end_users", "developers", "maintainers", "clients"}
 
@@ -58,7 +64,20 @@ def run_git_history_analysis(
             error_message=exc.message,
         )
 
-    structural = run_structural_code_analysis(extraction)
+    try:
+        structural = run_structural_code_analysis(extraction)
+    except AthenaValidationError as exc:
+        return GitHistoryAnalysisReport(
+            status="error",
+            repo_path=str(extraction.repo_path),
+            base_ref=extraction.base_ref,
+            target_ref=extraction.target_ref,
+            resolved_base_sha=extraction.resolved_base_sha,
+            resolved_target_sha=extraction.resolved_target_sha,
+            llm_backend_status="error",
+            error_code=exc.code,
+            error_message=exc.message,
+        )
     stories, _, llm_status, stripped_count, warnings = analyze_changes_with_ollama(
         extraction=extraction,
         structural=structural,
@@ -71,7 +90,7 @@ def run_git_history_analysis(
     total_ins = sum(f.insertions for f in extraction.changed_files)
     total_del = sum(f.deletions for f in extraction.changed_files)
 
-    return GitHistoryAnalysisReport(
+    return redact_model(GitHistoryAnalysisReport(
         status="ok",
         repo_path=str(extraction.repo_path),
         base_ref=extraction.base_ref,
@@ -94,7 +113,7 @@ def run_git_history_analysis(
         evidence_registry=extraction.evidence_registry,
         stripped_ungrounded_claims_count=stripped_count,
         warnings=warnings,
-    )
+    ))
 
 
 def run_breaking_change_detection(
@@ -129,7 +148,20 @@ def run_breaking_change_detection(
             error_message=exc.message,
         )
 
-    structural = run_structural_code_analysis(extraction)
+    try:
+        structural = run_structural_code_analysis(extraction)
+    except AthenaValidationError as exc:
+        return BreakingChangeReport(
+            status="error",
+            repo_path=str(extraction.repo_path),
+            base_ref=extraction.base_ref,
+            target_ref=extraction.target_ref,
+            resolved_base_sha=extraction.resolved_base_sha,
+            resolved_target_sha=extraction.resolved_target_sha,
+            llm_backend_status="error",
+            error_code=exc.code,
+            error_message=exc.message,
+        )
     _, breaking_findings, llm_status, stripped_count, warnings = analyze_changes_with_ollama(
         extraction=extraction,
         structural=structural,
@@ -142,7 +174,7 @@ def run_breaking_change_detection(
     if not include_low_confidence:
         breaking_findings = [f for f in breaking_findings if f.confidence != "low"]
 
-    return BreakingChangeReport(
+    return redact_model(BreakingChangeReport(
         status="ok",
         repo_path=str(extraction.repo_path),
         base_ref=extraction.base_ref,
@@ -159,7 +191,7 @@ def run_breaking_change_detection(
         evidence_registry=extraction.evidence_registry,
         stripped_ungrounded_claims_count=stripped_count,
         warnings=warnings,
-    )
+    ))
 
 
 def _format_evidence_citation(evidence_list: list[EvidenceRecord]) -> str:
@@ -301,7 +333,24 @@ def run_release_notes_generation(
                 error_message=exc.message,
             )
 
-    structural = run_structural_code_analysis(extraction)
+    try:
+        structural = run_structural_code_analysis(extraction)
+    except AthenaValidationError as exc:
+        return ReleaseNotesReport(
+            status="error",
+            repo_path=str(extraction.repo_path),
+            base_ref=extraction.base_ref,
+            target_ref=extraction.target_ref,
+            resolved_base_sha=extraction.resolved_base_sha,
+            resolved_target_sha=extraction.resolved_target_sha,
+            release_version=release_version,
+            audience=audience_clean,  # type: ignore[arg-type]
+            llm_backend_status="error",
+            release_summary="",
+            markdown="",
+            error_code=exc.code,
+            error_message=exc.message,
+        )
     stories, breaking_findings, llm_status, stripped_count, warnings = analyze_changes_with_ollama(
         extraction=extraction,
         structural=structural,
@@ -443,15 +492,29 @@ def run_release_notes_generation(
             md_lines.append(item)
         md_lines.append("")
 
-    markdown_doc = "\n".join(md_lines).strip() + "\n"
+    markdown_doc = redact_secrets("\n".join(md_lines).strip() + "\n")
 
     saved_path_str: str | None = None
     if validated_out_path is not None:
-        validated_out_path.parent.mkdir(parents=True, exist_ok=True)
-        validated_out_path.write_text(markdown_doc, encoding="utf-8")
+        try:
+            write_text_safely(validated_out_path, markdown_doc, overwrite=overwrite)
+        except AthenaValidationError as exc:
+            return ReleaseNotesReport(
+                status="error",
+                repo_path=str(extraction.repo_path),
+                base_ref=extraction.base_ref,
+                target_ref=extraction.target_ref,
+                release_version=release_version,
+                audience=audience_clean,  # type: ignore[arg-type]
+                llm_backend_status="error",
+                release_summary="",
+                markdown="",
+                error_code=exc.code,
+                error_message=exc.message,
+            )
         saved_path_str = str(validated_out_path)
 
-    return ReleaseNotesReport(
+    return redact_model(ReleaseNotesReport(
         status="ok",
         repo_path=str(extraction.repo_path),
         base_ref=extraction.base_ref,
@@ -469,5 +532,5 @@ def run_release_notes_generation(
         evidence_registry=extraction.evidence_registry,
         stripped_ungrounded_claims_count=stripped_count,
         warnings=warnings,
-    )
+    ))
 

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import math
+import os
 import re
+import tempfile
 from collections import Counter
 from pathlib import Path
+from typing import Any, TypeVar
+
+from pydantic import BaseModel
 
 
 class AthenaValidationError(ValueError):
@@ -32,6 +37,16 @@ WINDOWS_RESERVED_NAMES = {
 
 # Provider token & secret patterns (incorporating pr-agent#4079 bare token patterns)
 _SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (
+        "URI_USERINFO_CREDENTIAL",
+        re.compile(
+            r"(?i)\b(?P<scheme>https?|ftp)://(?P<username>[^\s/@:]+):(?P<password>[^\s/@]+)@"
+        ),
+    ),
+    (
+        "AUTHORIZATION_CREDENTIAL",
+        re.compile(r"(?i)\b(authorization\s*:\s*(?:bearer|basic)\s+)[^\s,;]+"),
+    ),
     ("GITHUB_PAT", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,255}\b")),
     ("GITHUB_FINE_PAT", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{35,255}\b")),
     ("ANTHROPIC_KEY", re.compile(r"\bsk-ant-[A-Za-z0-9\-_]{20,255}\b")),
@@ -137,6 +152,11 @@ def validate_safe_output_path(
         )
 
     candidate = Path(raw)
+    if any(part.lower() == ".git" for part in candidate.parts):
+        raise AthenaValidationError(
+            "GIT_METADATA_WRITE_BLOCKED",
+            f"Refusing to write release output inside Git metadata: {raw}",
+        )
     # Check Windows reserved device names across all components
     for part in candidate.parts:
         part_clean = part.split(":")[0]  # strip any colon
@@ -164,12 +184,63 @@ def validate_safe_output_path(
             "OUTPUT_PATH_ESCAPE_BLOCKED",
             f"Refusing to write file outside repository root ({resolved_root}): {candidate}",
         )
+    git_metadata = resolved_root / ".git"
+    if git_metadata.is_dir() and resolved_target.is_relative_to(git_metadata.resolve(strict=True)):
+        raise AthenaValidationError(
+            "GIT_METADATA_WRITE_BLOCKED",
+            f"Refusing to write release output inside Git metadata: {candidate}",
+        )
     if resolved_target.exists() and not overwrite:
         raise AthenaValidationError(
             "FILE_EXISTS_OVERWRITE_DENIED",
             f"Target file '{resolved_target}' already exists. Pass overwrite=True only after explicit user confirmation.",
         )
     return resolved_target
+
+
+def write_text_safely(target: Path, content: str, overwrite: bool = False) -> None:
+    """Write UTF-8 text without overwrite races or hard-link mutation."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not overwrite:
+        try:
+            with target.open("x", encoding="utf-8", newline="\n") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            return
+        except FileExistsError as exc:
+            raise AthenaValidationError(
+                "FILE_EXISTS_OVERWRITE_DENIED",
+                f"Target file '{target}' already exists. Pass overwrite=True only after explicit user confirmation.",
+            ) from exc
+
+    # Replacing a same-directory temporary file changes the directory entry instead
+    # of mutating an existing hard-linked inode. A hostile process with write access
+    # to the same parent directory can still race directory changes; Athena cannot
+    # fully prevent that OS-level threat without platform-specific directory handles.
+    tmp_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            dir=target.parent,
+            delete=False,
+        ) as handle:
+            tmp_name = handle.name
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, target)
+        tmp_name = None
+    finally:
+        if tmp_name is not None:
+            try:
+                Path(tmp_name).unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def shannon_entropy(text: str) -> float:
@@ -189,6 +260,13 @@ def redact_secrets(text: str) -> str:
     for label, pattern in _SECRET_PATTERNS:
         if label == "GENERIC_SECRET_ASSIGNMENT":
             redacted = pattern.sub(r"\1 = '[REDACTED_SECRET]'", redacted)
+        elif label == "AUTHORIZATION_CREDENTIAL":
+            redacted = pattern.sub(r"\1[REDACTED_AUTHORIZATION_CREDENTIAL]", redacted)
+        elif label == "URI_USERINFO_CREDENTIAL":
+            redacted = pattern.sub(
+                r"\g<scheme>://\g<username>:[REDACTED_URI_CREDENTIAL]@",
+                redacted,
+            )
         else:
             redacted = pattern.sub(f"[REDACTED_{label}]", redacted)
 
@@ -205,6 +283,28 @@ def redact_secrets(text: str) -> str:
         return match.group(0)
 
     return _QUOTED_LITERAL_RE.sub(_entropy_replacer, redacted)
+
+
+def redact_sensitive_data(value: Any) -> Any:
+    """Recursively redact every string in a serialized report or MCP response."""
+    if isinstance(value, str):
+        return redact_secrets(value)
+    if isinstance(value, dict):
+        return {key: redact_sensitive_data(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_sensitive_data(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_sensitive_data(item) for item in value)
+    return value
+
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
+
+
+def redact_model(model: _ModelT) -> _ModelT:
+    """Return a validated copy of a Pydantic report with all strings redacted."""
+    clean_data = redact_sensitive_data(model.model_dump(mode="python"))
+    return type(model).model_validate(clean_data)
 
 
 def wrap_untrusted_repo_data(content: str) -> str:

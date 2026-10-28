@@ -281,6 +281,22 @@ def test_8_model_timeout_malformed_json_and_hallucination_stripping(sample_git_r
             assert rep_timeout.llm_backend_status == "fallback_deterministic"
             assert any("timed out" in w or "ReadTimeout" in w for w in rep_timeout.warnings)
 
+        with patch(
+            "athena.ollama_engine.httpx.post",
+            side_effect=RuntimeError(
+                "request to https://athena-user:synthetic-password-123@ollama.internal failed"
+            ),
+        ):
+            rep_credential_error = run_git_history_analysis(
+                repo_path=sample_git_repo,
+                base_ref="v0.1.0",
+                target_ref="v0.2.0",
+                use_llm=True,
+            )
+            warnings = "\n".join(rep_credential_error.warnings)
+            assert "synthetic-password-123" not in warnings
+            assert "[REDACTED_URI_CREDENTIAL]" in warnings
+
         mock_malformed = MagicMock()
         mock_malformed.status_code = 200
         mock_malformed.json.return_value = {"response": "NOT_JSON {{{{ broken output"}
@@ -508,13 +524,14 @@ def test_12_mcp_input_validation_and_secret_redaction(sample_git_repo: Path) -> 
     assert "[REDACTED_OPENAI_KEY]" in redacted
 
 
+@pytest.mark.ollama
 def test_14_live_ollama_qwen25_coder_7b_integration(sample_git_repo: Path) -> None:
     """Scenario 14: Live integration test against local Ollama qwen2.5-coder:7b."""
     import os
 
+    if os.environ.get("ATHENA_RUN_OLLAMA_TESTS", "").lower() not in ("1", "true", "yes"):
+        pytest.skip("Set ATHENA_RUN_OLLAMA_TESTS=1 to run the live local Ollama integration test.")
     ready, reason = check_ollama_model_ready()
-    if not ready and os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
-        pytest.skip(f"Skipping local Ollama GPU test on cloud GitHub Actions runner: {reason}")
     assert ready is True, f"Mandatory local model qwen2.5-coder:7b must be available in Ollama: {reason}"
 
     report = run_git_history_analysis(
