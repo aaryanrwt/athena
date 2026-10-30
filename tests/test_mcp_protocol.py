@@ -70,6 +70,12 @@ def _extract_json_from_call_tool_result(result: Any) -> dict[str, Any]:
     """Extract parsed JSON dictionary from MCP CallToolResult across MCP SDK 1.x / 2.x."""
     if isinstance(result, dict):
         return result
+    if isinstance(result, tuple):
+        for part in reversed(result):
+            if isinstance(part, dict):
+                return part
+        if result and isinstance(result[0], list):
+            result = type("_R", (), {"content": result[0]})()
     if hasattr(result, "structuredContent") and isinstance(result.structuredContent, dict):
         return result.structuredContent
     if hasattr(result, "content") and result.content:
