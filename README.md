@@ -10,6 +10,7 @@
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![M8ven Score](https://m8ven.ai/badge/mcp/aaryanrwt/athena)](https://m8ven.ai/mcp/aaryanrwt/athena?s=readme)
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/aaryanrwt/badge.svg)](https://hub.xerj.org/contributors/aaryanrwt)
 
 Local-first, evidence-backed breaking-change and caller blast-radius analysis for git diffs, available as an MCP server, a CLI, a GitHub Action, and a pre-commit hook. Deterministic by default: no LLM, no network.
 
