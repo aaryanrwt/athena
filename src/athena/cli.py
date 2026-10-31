@@ -124,6 +124,11 @@ def main(argv: list[str] | None = None) -> int:
     p_chk = sub.add_parser("check", help="Deterministic breaking-change gate for pre-commit")
     p_chk.add_argument("repo_path", nargs="?", default=".", help="Path to local Git repository (default: .)")
     p_chk.add_argument("--staged", action="store_true", help="Analyze staged (index) changes against HEAD")
+    p_chk.add_argument(
+        "--allow-breaking",
+        action="store_true",
+        help="Audit-only mode: print breaking changes but exit 0 (override for intentional breaking changes)",
+    )
 
     # report command
     p_rep = sub.add_parser("report", help="Render a static breaking-change report")
@@ -251,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"athena: potential breaking change [{f.get('severity')}] {f.get('file_path')}: {f.get('title')}")
         if findings:
             print(f"athena: {len(findings)} potential breaking change(s) in staged changes; review before committing.")
-            return 1
+            return 0 if args.allow_breaking else 1
         return 0
 
     if args.command == "report":

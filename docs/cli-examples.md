@@ -286,3 +286,36 @@ athena report . --html --output athena-report.html
 ```
 
 Renders a self-contained, offline HTML report featuring visual call graphs, affected callers, and unified diff excerpts with zero external assets or scripts.
+
+### 9. One-Click MCP Client Configuration
+
+Command:
+```bash
+# Print ready-to-use configuration JSON to stdout:
+athena init-mcp cursor
+athena init-mcp claude-desktop
+athena init-mcp vscode
+
+# Or write directly to configuration file safely:
+athena init-mcp cursor --write --path .cursor/mcp.json
+```
+
+Prints or safely writes configuration JSON for Cursor, Claude Desktop, or VS Code. Never overwrites existing files without `--force`.
+
+### 10. Export Breaking Changes in SARIF 2.1.0 for CI & Code Scanning
+
+Command:
+```bash
+athena breaking-changes . --base main --target HEAD --format sarif
+```
+
+Formats AST breaking change findings, affected symbols, and line spans into standard Static Analysis Results Interchange Format (SARIF 2.1.0) for GitHub Code Scanning, SonarQube, and IDE security viewers.
+
+### 11. Incremental Content-Hash Symbol Cache
+
+Command:
+```bash
+athena --cache-dir .athena-cache breaking-changes . --base main --target HEAD
+```
+
+Enables opt-in SHA-256 content-hash caching for parsed symbols across large repositories. Can also be enabled globally via the `ATHENA_CACHE_DIR` environment variable.

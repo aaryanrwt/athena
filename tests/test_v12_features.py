@@ -150,6 +150,8 @@ def test_check_staged_flags_breaking_change(tmp_path, capsys):
     capsys.readouterr()
     assert main(["check", "--staged", str(repo)]) == 1
     assert "lib.py" in capsys.readouterr().out
+    # with --allow-breaking, reports breaking changes but exits 0
+    assert main(["check", "--staged", str(repo), "--allow-breaking"]) == 0
     # analysis must not touch the index or refs
     status = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, timeout=30).stdout
     assert status.strip().startswith("M")
