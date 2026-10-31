@@ -21,7 +21,7 @@ inputs:
   ref:
     description: "Git ref (branch, tag, or commit) to install when install-source=git."
     required: false
-    default: "main"
+    default: "v1.2.0"
   python-version:
     description: "Python version to use."
     required: false

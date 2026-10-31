@@ -43,7 +43,7 @@ athena breaking-changes . --base main --target HEAD
 - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
   with:
     fetch-depth: 0
-- uses: aaryanrwt/athena@main   # pin to a release tag or SHA once released
+- uses: aaryanrwt/athena@v1.2.0
 ```
 
 Posts one sticky comment per PR. Also available as a Docker image and a pre-commit hook (`athena check --staged`). Details, permissions, and the safe `pull_request` vs `pull_request_target` guidance are in [docs/integrations.md](docs/integrations.md).

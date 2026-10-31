@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0              # Athena needs history for base..head
           persist-credentials: false
-      - uses: aaryanrwt/athena@main   # pin to a release tag or full SHA once released
+      - uses: aaryanrwt/athena@v1.2.0
 ```
 
 Inputs: `base`, `target`, `install-source` (`git` default, or `local` to install
