@@ -555,7 +555,7 @@ def run_evaluation_suite(
 def _generate_markdown_report(summary: dict[str, Any], results: list[dict[str, Any]], target_file: Path) -> None:
     ge_100_count = sum(1 for r in results if r.get("commits_inspected", 0) >= 100)
     lines = [
-        "# Athena v1.1.0 Multi-Language 100+ Commit & MCP Evaluation Report (`gemma:latest` & `qwen2.5-coder:7b`)",
+        "# Athena v1.2.0 Multi-Language 100+ Commit & MCP Evaluation Report (`gemma:latest` & `qwen2.5-coder:7b`)",
         "",
         f"- **Execution Timestamp**: `{summary['timestamp']}`",
         f"- **Evaluation Mode**: `{summary['mode']}`",
@@ -575,7 +575,7 @@ def _generate_markdown_report(summary: dict[str, Any], results: list[dict[str, A
         "",
         "## 1. Multi-Language 100+ Commit & Full MCP Tool Suite Methodology",
         "",
-        "Under the Athena v1.1.0 evaluation protocol:",
+        "Under the Athena v1.2.0 evaluation protocol:",
         "1. **Bounded 100+ Commit History (`--depth=125`, `--filter=blob:none`)**: Each repository is cloned into `tests/evaluation/cache` with at least 100 reachable ancestor commits (`HEAD~100..HEAD`).",
         "2. **Full MCP Server Execution**: Every repository is evaluated through Athena's MCP tools (`inspect_repository`, `analyze_git_history`, `detect_potential_breaking_changes`, and `generate_release_notes`).",
         "3. **Multi-Language Structural & AST Blast-Radius Inspection**: Analyzes structural symbol signatures across Python, TypeScript, JavaScript, C++, C, Go, Rust, Java, C#, Ruby, and PHP, plus recursive function bugs (`is_recursive`), public API export boundaries, and dynamic dispatch calls.",

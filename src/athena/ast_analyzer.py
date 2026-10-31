@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import re
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from athena.git_inspector import (
@@ -26,6 +26,7 @@ from athena.models import (
     UnresolvedDynamicCallItem,
 )
 from athena.security import is_safe_repo_file
+from athena.symbol_cache import compute_cache_key, get_active_cache
 
 _ENUM_BASE_NAMES = {"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "ReprEnum"}
 
@@ -525,7 +526,44 @@ def _analyze_py_recursion_bugs(
             break
 
 
+def _symbol_info_to_json(info: _PySymbolInfo) -> dict:
+    data = asdict(info)
+    data["raised_exceptions"] = sorted(info.raised_exceptions)
+    data["none_guarded_params"] = sorted(info.none_guarded_params)
+    return data
+
+
+def _symbol_info_from_json(data: dict) -> _PySymbolInfo:
+    payload = dict(data)
+    payload["params"] = [_PyParamInfo(**p) for p in payload.get("params", [])]
+    payload["raised_exceptions"] = set(payload.get("raised_exceptions", []))
+    payload["none_guarded_params"] = set(payload.get("none_guarded_params", []))
+    return _PySymbolInfo(**payload)
+
+
 def _parse_python_symbols(
+    source: str,
+    file_path: str = "module.py",
+    init_reexports: set[str] | None = None,
+) -> dict[str, _PySymbolInfo]:
+    """Cache-aware wrapper around the Python symbol parser (cache is opt-in)."""
+    cache = get_active_cache()
+    if cache is None:
+        return _parse_python_symbols_uncached(source, file_path=file_path, init_reexports=init_reexports)
+    extra = ",".join(sorted(init_reexports)) if init_reexports else ""
+    key = compute_cache_key("py", file_path, source, extra)
+    cached = cache.get(key)
+    if isinstance(cached, dict):
+        try:
+            return {name: _symbol_info_from_json(item) for name, item in cached.items()}
+        except (TypeError, ValueError, KeyError, AttributeError):
+            pass
+    result = _parse_python_symbols_uncached(source, file_path=file_path, init_reexports=init_reexports)
+    cache.put(key, {name: _symbol_info_to_json(info) for name, info in result.items()})
+    return result
+
+
+def _parse_python_symbols_uncached(
     source: str,
     file_path: str = "module.py",
     init_reexports: set[str] | None = None,
@@ -1149,6 +1187,29 @@ def _parse_ts_js_symbols(source: str) -> dict[str, tuple[str, int, str, list[str
 
 
 def _parse_multilang_symbols(
+    source: str,
+    file_path: str,
+) -> dict[str, tuple[str, int, str, list[str], str | None]]:
+    """Cache-aware wrapper around the multi-language symbol parser (cache is opt-in)."""
+    cache = get_active_cache()
+    if cache is None:
+        return _parse_multilang_symbols_uncached(source, file_path)
+    key = compute_cache_key("multilang", file_path, source)
+    cached = cache.get(key)
+    if isinstance(cached, dict):
+        try:
+            return {
+                name: (str(v[0]), int(v[1]), str(v[2]), [str(p) for p in v[3]], None if v[4] is None else str(v[4]))
+                for name, v in cached.items()
+            }
+        except (TypeError, ValueError, IndexError, KeyError):
+            pass
+    result = _parse_multilang_symbols_uncached(source, file_path)
+    cache.put(key, {name: list(v) for name, v in result.items()})
+    return result
+
+
+def _parse_multilang_symbols_uncached(
     source: str,
     file_path: str,
 ) -> dict[str, tuple[str, int, str, list[str], str | None]]:

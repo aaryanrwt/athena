@@ -106,6 +106,7 @@ class SymbolSignatureChange(BaseModel):
         "decorator_changed",
         "base_class_changed",
         "exception_raised_added",
+        "behavior_changed",
     ]
     old_signature: str | None = None
     new_signature: str | None = None

@@ -1,0 +1,802 @@
+[
+  {
+    "owner_repo": "ultralytics/yolov5",
+    "url": "https://github.com/ultralytics/yolov5",
+    "primary_language": "Python",
+    "stars_at_collection": 58243,
+    "default_branch": "master",
+    "description": "Ultralytics YOLOv5 in PyTorch for object detection, instance segmentation, classification, training, and export."
+  },
+  {
+    "owner_repo": "wasabeef/awesome-android-ui",
+    "url": "https://github.com/wasabeef/awesome-android-ui",
+    "primary_language": "Unknown",
+    "stars_at_collection": 58230,
+    "default_branch": "master",
+    "description": "A curated list of awesome Android UI/UX libraries"
+  },
+  {
+    "owner_repo": "HKUDS/CLI-Anything",
+    "url": "https://github.com/HKUDS/CLI-Anything",
+    "primary_language": "Python",
+    "stars_at_collection": 57825,
+    "default_branch": "main",
+    "description": "\"CLI-Anything: Making ALL Software Agent-Native\" -- CLI-Hub: https://clianything.cc/"
+  },
+  {
+    "owner_repo": "appwrite/appwrite",
+    "url": "https://github.com/appwrite/appwrite",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 57800,
+    "default_branch": "main",
+    "description": "The open-source cloud for agents & devs. Including Auth, Databases, Storage, Functions, Messaging, Hosting, Realtime, WAF and more"
+  },
+  {
+    "owner_repo": "scutan90/DeepLearning-500-questions",
+    "url": "https://github.com/scutan90/DeepLearning-500-questions",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 57696,
+    "default_branch": "master",
+    "description": "\u6df1\u5ea6\u5b66\u4e60500\u95ee\uff0c\u4ee5\u95ee\u7b54\u5f62\u5f0f\u5bf9\u5e38\u7528\u7684\u6982\u7387\u77e5\u8bc6\u3001\u7ebf\u6027\u4ee3\u6570\u3001\u673a\u5668\u5b66\u4e60\u3001\u6df1\u5ea6\u5b66\u4e60\u3001\u8ba1\u7b97\u673a\u89c6\u89c9\u7b49\u70ed\u70b9\u95ee\u9898\u8fdb\u884c\u9610\u8ff0\uff0c\u4ee5\u5e2e\u52a9\u81ea\u5df1\u53ca\u6709\u9700\u8981\u7684\u8bfb\u8005\u3002 \u5168\u4e66\u5206\u4e3a18\u4e2a\u7ae0\u8282\uff0c50\u4f59\u4e07\u5b57\u3002\u7531\u4e8e\u6c34\u5e73\u6709\u9650\uff0c\u4e66\u4e2d\u4e0d\u59a5\u4e4b\u5904\u6073\u8bf7\u5e7f\u5927\u8bfb\u8005\u6279\u8bc4\u6307\u6b63\u3002   \u672a\u5b8c\u5f85\u7eed............ \u5982\u6709\u610f\u5408\u4f5c\uff0c\u8054\u7cfbscutjy2015@163.com                     \u7248\u6743\u6240\u6709\uff0c\u8fdd\u6743\u5fc5\u7a76       Tan 2018.0"
+  },
+  {
+    "owner_repo": "Textualize/rich",
+    "url": "https://github.com/Textualize/rich",
+    "primary_language": "Python",
+    "stars_at_collection": 57683,
+    "default_branch": "main",
+    "description": "Rich is a Python library for rich text and beautiful formatting in the terminal."
+  },
+  {
+    "owner_repo": "h5bp/html5-boilerplate",
+    "url": "https://github.com/h5bp/html5-boilerplate",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 57653,
+    "default_branch": "main",
+    "description": "A professional front-end template for building fast, robust, and adaptable web apps or sites."
+  },
+  {
+    "owner_repo": "zylon-ai/private-gpt",
+    "url": "https://github.com/zylon-ai/private-gpt",
+    "primary_language": "Python",
+    "stars_at_collection": 57620,
+    "default_branch": "main",
+    "description": "Complete API layer for private AI applications on local models: RAG, skills, tools, MCP, text-to-sql, and more. Works with any OpenAI-compatible inference server."
+  },
+  {
+    "owner_repo": "agalwood/Motrix",
+    "url": "https://github.com/agalwood/Motrix",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 57599,
+    "default_branch": "main",
+    "description": "A full-featured download manager."
+  },
+  {
+    "owner_repo": "deepfakes/faceswap",
+    "url": "https://github.com/deepfakes/faceswap",
+    "primary_language": "Python",
+    "stars_at_collection": 57593,
+    "default_branch": "master",
+    "description": "Deepfakes Software For All"
+  },
+  {
+    "owner_repo": "coreyhaines31/marketingskills",
+    "url": "https://github.com/coreyhaines31/marketingskills",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 57500,
+    "default_branch": "main",
+    "description": "Marketing skills for Claude Code and AI agents. CRO, copywriting, SEO, analytics, and growth engineering."
+  },
+  {
+    "owner_repo": "Zie619/n8n-workflows",
+    "url": "https://github.com/Zie619/n8n-workflows",
+    "primary_language": "Python",
+    "stars_at_collection": 57133,
+    "default_branch": "main",
+    "description": "all of the workflows of n8n i could find (also from the site itself)"
+  },
+  {
+    "owner_repo": "router-for-me/CLIProxyAPI",
+    "url": "https://github.com/router-for-me/CLIProxyAPI",
+    "primary_language": "Go",
+    "stars_at_collection": 57031,
+    "default_branch": "main",
+    "description": "Wrap Antigravity, ChatGPT Codex, Claude Code, Grok Build, Muse Code, Devin as an OpenAI/Gemini/Claude/Codex compatible API service, allowing you to enjoy the free Gemini Series, GPT Series, Grok Serie"
+  },
+  {
+    "owner_repo": "laurent22/joplin",
+    "url": "https://github.com/laurent22/joplin",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 56949,
+    "default_branch": "dev",
+    "description": "Joplin - the privacy-focused note taking app with sync capabilities for Windows, macOS, Linux, Android and iOS."
+  },
+  {
+    "owner_repo": "hesreallyhim/awesome-claude-code",
+    "url": "https://github.com/hesreallyhim/awesome-claude-code",
+    "primary_language": "Python",
+    "stars_at_collection": 56924,
+    "default_branch": "main",
+    "description": "A hand-picked collection of the finest of resources for the most awesome of agents, Claude Code, the undisputed champion of coding companions, from the unstoppable team at Anthropic PBC (no affiliatio"
+  },
+  {
+    "owner_repo": "typst/typst",
+    "url": "https://github.com/typst/typst",
+    "primary_language": "Rust",
+    "stars_at_collection": 56904,
+    "default_branch": "main",
+    "description": "A markup-based typesetting system that is powerful and easy to learn."
+  },
+  {
+    "owner_repo": "ageitgey/face_recognition",
+    "url": "https://github.com/ageitgey/face_recognition",
+    "primary_language": "Python",
+    "stars_at_collection": 56865,
+    "default_branch": "master",
+    "description": "The world's simplest facial recognition api for Python and the command line"
+  },
+  {
+    "owner_repo": "soimort/you-get",
+    "url": "https://github.com/soimort/you-get",
+    "primary_language": "Python",
+    "stars_at_collection": 56864,
+    "default_branch": "develop",
+    "description": ":arrow_double_down: Dumb downloader that scrapes the web"
+  },
+  {
+    "owner_repo": "FuelLabs/fuel-core",
+    "url": "https://github.com/FuelLabs/fuel-core",
+    "primary_language": "Rust",
+    "stars_at_collection": 56774,
+    "default_branch": "master",
+    "description": "Rust full node implementation of the Fuel v2 protocol."
+  },
+  {
+    "owner_repo": "golang-standards/project-layout",
+    "url": "https://github.com/golang-standards/project-layout",
+    "primary_language": "Makefile",
+    "stars_at_collection": 56725,
+    "default_branch": "master",
+    "description": "Standard Go Project Layout"
+  },
+  {
+    "owner_repo": "bojieli/ai-agent-book",
+    "url": "https://github.com/bojieli/ai-agent-book",
+    "primary_language": "Python",
+    "stars_at_collection": 56672,
+    "default_branch": "main",
+    "description": "\u300a\u6df1\u5165\u7406\u89e3 AI Agent\uff1a\u8bbe\u8ba1\u539f\u7406\u4e0e\u5de5\u7a0b\u5b9e\u8df5\u300b\uff08\u674e\u535a\u6770 \u8457\uff09\u5f00\u6e90\u4e3b\u4ed3\u5e93\uff1a\u5168\u4e66\u6b63\u6587\u3001\u7f16\u8bd1\u7248 PDF \u4e0e\u6309\u7ae0\u914d\u5957\u4ee3\u7801"
+  },
+  {
+    "owner_repo": "firstcontributions/first-contributions",
+    "url": "https://github.com/firstcontributions/first-contributions",
+    "primary_language": "Unknown",
+    "stars_at_collection": 56631,
+    "default_branch": "main",
+    "description": "\ud83d\ude80\u2728 Help beginners to contribute to open source projects"
+  },
+  {
+    "owner_repo": "vectorize-io/hindsight",
+    "url": "https://github.com/vectorize-io/hindsight",
+    "primary_language": "Python",
+    "stars_at_collection": 56627,
+    "default_branch": "main",
+    "description": "Hindsight: Agent Memory That Learns"
+  },
+  {
+    "owner_repo": "remix-run/react-router",
+    "url": "https://github.com/remix-run/react-router",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 56626,
+    "default_branch": "main",
+    "description": "Declarative routing for React"
+  },
+  {
+    "owner_repo": "freqtrade/freqtrade",
+    "url": "https://github.com/freqtrade/freqtrade",
+    "primary_language": "Python",
+    "stars_at_collection": 56165,
+    "default_branch": "develop",
+    "description": "Free, open source crypto trading bot"
+  },
+  {
+    "owner_repo": "bannedbook/fanqiang",
+    "url": "https://github.com/bannedbook/fanqiang",
+    "primary_language": "Kotlin",
+    "stars_at_collection": 56005,
+    "default_branch": "master",
+    "description": "\u7ffb\u5899-\u79d1\u5b66\u4e0a\u7f51"
+  },
+  {
+    "owner_repo": "aaif-goose/goose",
+    "url": "https://github.com/aaif-goose/goose",
+    "primary_language": "Rust",
+    "stars_at_collection": 55974,
+    "default_branch": "main",
+    "description": "an open source, extensible AI agent that goes beyond code suggestions - install, execute, edit, and test with any LLM"
+  },
+  {
+    "owner_repo": "PowerShell/PowerShell",
+    "url": "https://github.com/PowerShell/PowerShell",
+    "primary_language": "C#",
+    "stars_at_collection": 55964,
+    "default_branch": "master",
+    "description": "PowerShell for every system!"
+  },
+  {
+    "owner_repo": "gatsbyjs/gatsby",
+    "url": "https://github.com/gatsbyjs/gatsby",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 55920,
+    "default_branch": "master",
+    "description": "React-based framework with performance, scalability, and security built in."
+  },
+  {
+    "owner_repo": "azl397985856/leetcode",
+    "url": "https://github.com/azl397985856/leetcode",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 55714,
+    "default_branch": "master",
+    "description": "LeetCode Solutions: A Record of My Problem Solving Journey.( leetcode\u9898\u89e3\uff0c\u8bb0\u5f55\u81ea\u5df1\u7684leetcode\u89e3\u9898\u4e4b\u8def\u3002)"
+  },
+  {
+    "owner_repo": "WerWolv/ImHex",
+    "url": "https://github.com/WerWolv/ImHex",
+    "primary_language": "C++",
+    "stars_at_collection": 55669,
+    "default_branch": "master",
+    "description": "\ud83d\udd0d A Hex Editor for Reverse Engineers, Programmers and people who value their retinas when working at 3 AM."
+  },
+  {
+    "owner_repo": "TryGhost/Ghost",
+    "url": "https://github.com/TryGhost/Ghost",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 55637,
+    "default_branch": "main",
+    "description": "Independent technology for modern publishing, memberships, subscriptions and newsletters."
+  },
+  {
+    "owner_repo": "ngosang/trackerslist",
+    "url": "https://github.com/ngosang/trackerslist",
+    "primary_language": "Unknown",
+    "stars_at_collection": 55547,
+    "default_branch": "master",
+    "description": "Updated list of public BitTorrent trackers"
+  },
+  {
+    "owner_repo": "odoo/odoo",
+    "url": "https://github.com/odoo/odoo",
+    "primary_language": "Python",
+    "stars_at_collection": 55431,
+    "default_branch": "20.0",
+    "description": "Odoo. Open Source Apps To Grow Your Business."
+  },
+  {
+    "owner_repo": "K-Dense-AI/scientific-agent-skills",
+    "url": "https://github.com/K-Dense-AI/scientific-agent-skills",
+    "primary_language": "Python",
+    "stars_at_collection": 55396,
+    "default_branch": "main",
+    "description": "Turn any AI agent into an AI Scientist. The #1 Agent Skills library for science, used by 250,000+ scientists worldwide. 177 ready-to-use validated skills plus 100+ scientific databases covering biolog"
+  },
+  {
+    "owner_repo": "romkatv/powerlevel10k",
+    "url": "https://github.com/romkatv/powerlevel10k",
+    "primary_language": "Shell",
+    "stars_at_collection": 55304,
+    "default_branch": "master",
+    "description": "A Zsh theme"
+  },
+  {
+    "owner_repo": "facebookresearch/segment-anything",
+    "url": "https://github.com/facebookresearch/segment-anything",
+    "primary_language": "Jupyter Notebook",
+    "stars_at_collection": 55081,
+    "default_branch": "main",
+    "description": "The repository provides code for running inference with the SegmentAnything Model (SAM), links for downloading the trained model checkpoints, and example notebooks that show how to use the model."
+  },
+  {
+    "owner_repo": "microsoft/VibeVoice",
+    "url": "https://github.com/microsoft/VibeVoice",
+    "primary_language": "Python",
+    "stars_at_collection": 55054,
+    "default_branch": "main",
+    "description": "Open-Source Frontier Voice AI"
+  },
+  {
+    "owner_repo": "lyswhut/lx-music-desktop",
+    "url": "https://github.com/lyswhut/lx-music-desktop",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 54917,
+    "default_branch": "master",
+    "description": "\u4e00\u4e2a\u57fa\u4e8e Electron \u7684\u97f3\u4e50\u8f6f\u4ef6"
+  },
+  {
+    "owner_repo": "ggml-org/whisper.cpp",
+    "url": "https://github.com/ggml-org/whisper.cpp",
+    "primary_language": "C++",
+    "stars_at_collection": 54805,
+    "default_branch": "master",
+    "description": "Port of OpenAI's Whisper model in C/C++"
+  },
+  {
+    "owner_repo": "vuejs/core",
+    "url": "https://github.com/vuejs/core",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 54800,
+    "default_branch": "main",
+    "description": "\ud83d\udd96 Vue.js is a progressive, incrementally-adoptable JavaScript framework for building UI on the web."
+  },
+  {
+    "owner_repo": "bmad-code-org/BMAD-METHOD",
+    "url": "https://github.com/bmad-code-org/BMAD-METHOD",
+    "primary_language": "Python",
+    "stars_at_collection": 54789,
+    "default_branch": "main",
+    "description": "Breakthrough Method for Agile Ai Driven Development"
+  },
+  {
+    "owner_repo": "wagoodman/dive",
+    "url": "https://github.com/wagoodman/dive",
+    "primary_language": "Go",
+    "stars_at_collection": 54680,
+    "default_branch": "main",
+    "description": "A tool for exploring each layer in a docker image"
+  },
+  {
+    "owner_repo": "Imbad0202/academic-research-skills",
+    "url": "https://github.com/Imbad0202/academic-research-skills",
+    "primary_language": "Python",
+    "stars_at_collection": 54673,
+    "default_branch": "main",
+    "description": "Academic Research Skills for Claude Code: research \u2192 write \u2192 review \u2192 revise \u2192 finalize"
+  },
+  {
+    "owner_repo": "lencx/ChatGPT",
+    "url": "https://github.com/lencx/ChatGPT",
+    "primary_language": "Rust",
+    "stars_at_collection": 54671,
+    "default_branch": "v2-dev",
+    "description": "\u2744\ufe0f ChatGPT Desktop Application (Mac, Windows and Linux)"
+  },
+  {
+    "owner_repo": "psf/requests",
+    "url": "https://github.com/psf/requests",
+    "primary_language": "Python",
+    "stars_at_collection": 54574,
+    "default_branch": "main",
+    "description": "A simple, yet elegant, HTTP library."
+  },
+  {
+    "owner_repo": "ChromeDevTools/chrome-devtools-mcp",
+    "url": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 54499,
+    "default_branch": "main",
+    "description": "Chrome DevTools for coding agents"
+  },
+  {
+    "owner_repo": "multica-ai/multica",
+    "url": "https://github.com/multica-ai/multica",
+    "primary_language": "Go",
+    "stars_at_collection": 54380,
+    "default_branch": "main",
+    "description": "Make humans and AI agents work as one team \u2014 open-source and self-hostable."
+  },
+  {
+    "owner_repo": "google/material-design-icons",
+    "url": "https://github.com/google/material-design-icons",
+    "primary_language": "Unknown",
+    "stars_at_collection": 54190,
+    "default_branch": "master",
+    "description": "Material Design icons by Google (Material Symbols)"
+  },
+  {
+    "owner_repo": "mozilla/pdf.js",
+    "url": "https://github.com/mozilla/pdf.js",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 54064,
+    "default_branch": "master",
+    "description": "PDF Reader in JavaScript"
+  },
+  {
+    "owner_repo": "ElemeFE/element",
+    "url": "https://github.com/ElemeFE/element",
+    "primary_language": "Vue",
+    "stars_at_collection": 53999,
+    "default_branch": "dev",
+    "description": "A Vue.js 2.0 UI Toolkit for Web"
+  },
+  {
+    "owner_repo": "cloudflare/security-audit-skill",
+    "url": "https://github.com/cloudflare/security-audit-skill",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 53977,
+    "default_branch": "main",
+    "description": "A coding-agent skill for multi-phase security audits with independently verified, machine-readable findings"
+  },
+  {
+    "owner_repo": "anthropics/claude-cookbooks",
+    "url": "https://github.com/anthropics/claude-cookbooks",
+    "primary_language": "Jupyter Notebook",
+    "stars_at_collection": 53969,
+    "default_branch": "main",
+    "description": "A collection of notebooks/recipes showcasing some fun and effective ways of using Claude."
+  },
+  {
+    "owner_repo": "dockur/windows",
+    "url": "https://github.com/dockur/windows",
+    "primary_language": "Shell",
+    "stars_at_collection": 53907,
+    "default_branch": "master",
+    "description": "Windows inside a Docker container."
+  },
+  {
+    "owner_repo": "chinese-poetry/chinese-poetry",
+    "url": "https://github.com/chinese-poetry/chinese-poetry",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 53889,
+    "default_branch": "master",
+    "description": "The most comprehensive database of Chinese poetry \ud83e\uddf6\u6700\u5168\u4e2d\u534e\u53e4\u8bd7\u8bcd\u6570\u636e\u5e93,  \u5510\u5b8b\u4e24\u671d\u8fd1\u4e00\u4e07\u56db\u5343\u53e4\u8bd7\u4eba,  \u63a5\u8fd15.5\u4e07\u9996\u5510\u8bd7\u52a026\u4e07\u5b8b\u8bd7.  \u4e24\u5b8b\u65f6\u671f1564\u4f4d\u8bcd\u4eba\uff0c21050\u9996\u8bcd\u3002"
+  },
+  {
+    "owner_repo": "vsouza/awesome-ios",
+    "url": "https://github.com/vsouza/awesome-ios",
+    "primary_language": "Swift",
+    "stars_at_collection": 53819,
+    "default_branch": "master",
+    "description": "A curated list of awesome iOS ecosystem, including Objective-C and Swift Projects "
+  },
+  {
+    "owner_repo": "lllyasviel/Fooocus",
+    "url": "https://github.com/lllyasviel/Fooocus",
+    "primary_language": "Python",
+    "stars_at_collection": 53763,
+    "default_branch": "main",
+    "description": "Focus on prompting and generating"
+  },
+  {
+    "owner_repo": "JetBrains/kotlin",
+    "url": "https://github.com/JetBrains/kotlin",
+    "primary_language": "Kotlin",
+    "stars_at_collection": 53526,
+    "default_branch": "master",
+    "description": "The Kotlin Programming Language. "
+  },
+  {
+    "owner_repo": "necolas/normalize.css",
+    "url": "https://github.com/necolas/normalize.css",
+    "primary_language": "CSS",
+    "stars_at_collection": 53484,
+    "default_branch": "master",
+    "description": "A modern alternative to CSS resets"
+  },
+  {
+    "owner_repo": "VoltAgent/awesome-openclaw-skills",
+    "url": "https://github.com/VoltAgent/awesome-openclaw-skills",
+    "primary_language": "Unknown",
+    "stars_at_collection": 53450,
+    "default_branch": "main",
+    "description": "The awesome collection of OpenClaw skills. 5,400+ skills filtered and categorized from the official OpenClaw Skills Registry.\ud83e\udd9e"
+  },
+  {
+    "owner_repo": "expo/expo",
+    "url": "https://github.com/expo/expo",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 53229,
+    "default_branch": "main",
+    "description": "An open-source framework for making universal native apps with React. Expo runs on Android, iOS, and the web."
+  },
+  {
+    "owner_repo": "jesseduffield/lazydocker",
+    "url": "https://github.com/jesseduffield/lazydocker",
+    "primary_language": "Go",
+    "stars_at_collection": 53224,
+    "default_branch": "master",
+    "description": "The lazier way to manage everything docker"
+  },
+  {
+    "owner_repo": "CherryHQ/cherry-studio",
+    "url": "https://github.com/CherryHQ/cherry-studio",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 53107,
+    "default_branch": "main",
+    "description": "Your AI workspace for models, agents, and productivity."
+  },
+  {
+    "owner_repo": "poteto/hiring-without-whiteboards",
+    "url": "https://github.com/poteto/hiring-without-whiteboards",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 53014,
+    "default_branch": "main",
+    "description": "\u2b50\ufe0f  Companies that don't have a broken hiring process"
+  },
+  {
+    "owner_repo": "sickcodes/Docker-OSX",
+    "url": "https://github.com/sickcodes/Docker-OSX",
+    "primary_language": "Shell",
+    "stars_at_collection": 53008,
+    "default_branch": "master",
+    "description": "Run macOS VM in a Docker! Run near native OSX-KVM in Docker! X11 Forwarding! CI/CD for OS X Security Research! Docker mac Containers."
+  },
+  {
+    "owner_repo": "dkhamsing/open-source-ios-apps",
+    "url": "https://github.com/dkhamsing/open-source-ios-apps",
+    "primary_language": "Unknown",
+    "stars_at_collection": 52915,
+    "default_branch": "master",
+    "description": ":iphone: Collaborative List of Open-Source iOS Apps"
+  },
+  {
+    "owner_repo": "run-llama/llama_index",
+    "url": "https://github.com/run-llama/llama_index",
+    "primary_language": "Python",
+    "stars_at_collection": 52748,
+    "default_branch": "main",
+    "description": "LlamaIndex is the document processing platform for AI"
+  },
+  {
+    "owner_repo": "Ebony-Vinyl/dsh-our-free-model",
+    "url": "https://github.com/Ebony-Vinyl/dsh-our-free-model",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 52743,
+    "default_branch": "main",
+    "description": "\u5728 dsh \u91cc\u88c5\u4e0a\u8fd9\u4e2a\u63d2\u4ef6\u5373\u53ef\uff0c\u65e0\u9700\u767b\u5f55\u3001\u6ce8\u518c\u6216\u586b API Key\uff0c\u5c31\u80fd\u4f7f\u7528\u5305\u62ec DeepSeek V4.1 Flash\u3001Kimi K3 \u5728\u5185\u7684\u524d\u6cbf\u6a21\u578b\u2014\u2014\u5b8c\u5168\u514d\u8d39\uff0c\u4e0d\u9650\u91cf\u3002 All you do is install this plugin in dsh: no login, no sign-up, no API key \u2014 the frontier models are just there,"
+  },
+  {
+    "owner_repo": "ionic-team/ionic-framework",
+    "url": "https://github.com/ionic-team/ionic-framework",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 52731,
+    "default_branch": "main",
+    "description": "A powerful cross-platform UI toolkit for building native-quality iOS, Android, and Progressive Web Apps with HTML, CSS, and JavaScript."
+  },
+  {
+    "owner_repo": "etcd-io/etcd",
+    "url": "https://github.com/etcd-io/etcd",
+    "primary_language": "Go",
+    "stars_at_collection": 52433,
+    "default_branch": "main",
+    "description": "Distributed reliable key-value store for the most critical data of a distributed system"
+  },
+  {
+    "owner_repo": "prettier/prettier",
+    "url": "https://github.com/prettier/prettier",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 52381,
+    "default_branch": "main",
+    "description": "Prettier is an opinionated code formatter."
+  },
+  {
+    "owner_repo": "dbeaver/dbeaver",
+    "url": "https://github.com/dbeaver/dbeaver",
+    "primary_language": "Java",
+    "stars_at_collection": 52250,
+    "default_branch": "devel",
+    "description": "Free universal database tool and SQL client"
+  },
+  {
+    "owner_repo": "xai-org/grok-1",
+    "url": "https://github.com/xai-org/grok-1",
+    "primary_language": "Python",
+    "stars_at_collection": 52223,
+    "default_branch": "main",
+    "description": "Grok open release"
+  },
+  {
+    "owner_repo": "Avik-Jain/100-Days-Of-ML-Code",
+    "url": "https://github.com/Avik-Jain/100-Days-Of-ML-Code",
+    "primary_language": "Unknown",
+    "stars_at_collection": 52016,
+    "default_branch": "master",
+    "description": "100 Days of ML Coding"
+  },
+  {
+    "owner_repo": "emilkowalski/skills",
+    "url": "https://github.com/emilkowalski/skills",
+    "primary_language": "Markdown",
+    "stars_at_collection": 51930,
+    "default_branch": "main",
+    "description": "Skills for Designers and Engineers."
+  },
+  {
+    "owner_repo": "google/guava",
+    "url": "https://github.com/google/guava",
+    "primary_language": "Java",
+    "stars_at_collection": 51914,
+    "default_branch": "master",
+    "description": "Google core libraries for Java"
+  },
+  {
+    "owner_repo": "jekyll/jekyll",
+    "url": "https://github.com/jekyll/jekyll",
+    "primary_language": "Ruby",
+    "stars_at_collection": 51740,
+    "default_branch": "master",
+    "description": ":globe_with_meridians: Jekyll is a blog-aware static site generator in Ruby"
+  },
+  {
+    "owner_repo": "HKUDS/DeepTutor",
+    "url": "https://github.com/HKUDS/DeepTutor",
+    "primary_language": "Python",
+    "stars_at_collection": 51683,
+    "default_branch": "main",
+    "description": "DeepTutor: Lifelong Personalized Tutoring. https://deeptutor.info/."
+  },
+  {
+    "owner_repo": "charlax/professional-programming",
+    "url": "https://github.com/charlax/professional-programming",
+    "primary_language": "Python",
+    "stars_at_collection": 51668,
+    "default_branch": "master",
+    "description": "A collection of learning resources for curious software engineers"
+  },
+  {
+    "owner_repo": "elder-plinius/CL4R1T4S",
+    "url": "https://github.com/elder-plinius/CL4R1T4S",
+    "primary_language": "Unknown",
+    "stars_at_collection": 51632,
+    "default_branch": "main",
+    "description": "LEAKED SYSTEM PROMPTS FOR CHATGPT, CLAUDE, GEMINI, GROK, PERPLEXITY, CURSOR, LOVABLE, REPLIT, AND MORE! - AI SYSTEMS TRANSPARENCY FOR ALL! \ud83d\udc50"
+  },
+  {
+    "owner_repo": "Yuan1z0825/nature-skills",
+    "url": "https://github.com/Yuan1z0825/nature-skills",
+    "primary_language": "Python",
+    "stars_at_collection": 51496,
+    "default_branch": "main",
+    "description": "\u7b26\u5408nature\u8bba\u6587\u5b66\u672f\u8868\u8fbe\u548c\u79d1\u7814\u7ed8\u56fe\u7684Skill"
+  },
+  {
+    "owner_repo": "DefinitelyTyped/DefinitelyTyped",
+    "url": "https://github.com/DefinitelyTyped/DefinitelyTyped",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 51461,
+    "default_branch": "master",
+    "description": "The repository for high quality TypeScript type definitions."
+  },
+  {
+    "owner_repo": "ethereum/go-ethereum",
+    "url": "https://github.com/ethereum/go-ethereum",
+    "primary_language": "Go",
+    "stars_at_collection": 51445,
+    "default_branch": "master",
+    "description": "Go implementation of the Ethereum protocol"
+  },
+  {
+    "owner_repo": "roboflow/supervision",
+    "url": "https://github.com/roboflow/supervision",
+    "primary_language": "Python",
+    "stars_at_collection": 51436,
+    "default_branch": "develop",
+    "description": "We write your reusable computer vision tools. \ud83d\udc9c"
+  },
+  {
+    "owner_repo": "skylot/jadx",
+    "url": "https://github.com/skylot/jadx",
+    "primary_language": "Java",
+    "stars_at_collection": 51392,
+    "default_branch": "master",
+    "description": "Dex to Java decompiler"
+  },
+  {
+    "owner_repo": "upscayl/upscayl",
+    "url": "https://github.com/upscayl/upscayl",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 51349,
+    "default_branch": "main",
+    "description": "\ud83c\udd99 Upscayl - #1 Free and Open Source AI Image Upscaler for Linux, MacOS and Windows."
+  },
+  {
+    "owner_repo": "justjavac/wechat-miniapp-radar",
+    "url": "https://github.com/justjavac/wechat-miniapp-radar",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 51175,
+    "default_branch": "main",
+    "description": ":traffic_light:\u5c0f\u7a0b\u5e8f\u96f7\u8fbe\uff1aAI \u9a71\u52a8\u7684\u5c0f\u7a0b\u5e8f\u6280\u672f\u9009\u578b\u3001\u8d8b\u52bf\u8ffd\u8e2a\u548c\u8fc1\u79fb\u8bca\u65ad\u5de5\u5177"
+  },
+  {
+    "owner_repo": "tldraw/tldraw",
+    "url": "https://github.com/tldraw/tldraw",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 51163,
+    "default_branch": "main",
+    "description": "Build infinite canvas apps in React with the tldraw SDK. World's best, top-most agent recommended #1 five star SDK."
+  },
+  {
+    "owner_repo": "serhii-londar/open-source-mac-os-apps",
+    "url": "https://github.com/serhii-londar/open-source-mac-os-apps",
+    "primary_language": "Unknown",
+    "stars_at_collection": 51133,
+    "default_branch": "master",
+    "description": "\ud83d\ude80 Awesome list of open source applications for macOS. https://t.me/s/opensourcemacosapps"
+  },
+  {
+    "owner_repo": "QuantumNous/new-api",
+    "url": "https://github.com/QuantumNous/new-api",
+    "primary_language": "Go",
+    "stars_at_collection": 51056,
+    "default_branch": "main",
+    "description": "Open-source AI gateway. Self-hosted LLM gateway with OpenAI-, Claude- and Gemini-compatible APIs, model routing, access control, usage tracking and cost accounting."
+  },
+  {
+    "owner_repo": "cypress-io/cypress",
+    "url": "https://github.com/cypress-io/cypress",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 51017,
+    "default_branch": "develop",
+    "description": "Fast, easy and reliable testing for anything that runs in a browser."
+  },
+  {
+    "owner_repo": "Semantic-Org/Semantic-UI",
+    "url": "https://github.com/Semantic-Org/Semantic-UI",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 51004,
+    "default_branch": "master",
+    "description": "Semantic is a UI component framework based around useful principles from natural language."
+  },
+  {
+    "owner_repo": "apple/container",
+    "url": "https://github.com/apple/container",
+    "primary_language": "Swift",
+    "stars_at_collection": 50984,
+    "default_branch": "main",
+    "description": "A tool for creating and running Linux containers using lightweight virtual machines on a Mac. It is written in Swift, and optimized for Apple silicon. "
+  },
+  {
+    "owner_repo": "chenglou/pretext",
+    "url": "https://github.com/chenglou/pretext",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 50971,
+    "default_branch": "main",
+    "description": "Fast, accurate & comprehensive text measurement & layout"
+  },
+  {
+    "owner_repo": "moeru-ai/airi",
+    "url": "https://github.com/moeru-ai/airi",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 50938,
+    "default_branch": "main",
+    "description": "\ud83d\udc96\ud83e\uddf8 Self hosted, you-owned Grok Companion, a container of souls of waifu, cyber livings to bring them into our worlds, wishing to achieve Neuro-sama's altitude. Capable of realtime voice chat, Minecraf"
+  },
+  {
+    "owner_repo": "nlohmann/json",
+    "url": "https://github.com/nlohmann/json",
+    "primary_language": "C++",
+    "stars_at_collection": 50825,
+    "default_branch": "develop",
+    "description": "JSON for Modern C++"
+  },
+  {
+    "owner_repo": "DavidHDev/react-bits",
+    "url": "https://github.com/DavidHDev/react-bits",
+    "primary_language": "JavaScript",
+    "stars_at_collection": 50772,
+    "default_branch": "main",
+    "description": "The largest open-source library of animated, interactive, and customizable React & Next.js components for building standout web products and experiences. Built for humans and AI agents."
+  },
+  {
+    "owner_repo": "ClickHouse/ClickHouse",
+    "url": "https://github.com/ClickHouse/ClickHouse",
+    "primary_language": "C++",
+    "stars_at_collection": 50679,
+    "default_branch": "master",
+    "description": "ClickHouse\u00ae is a real-time analytics database management system"
+  },
+  {
+    "owner_repo": "KeygraphHQ/shannon",
+    "url": "https://github.com/KeygraphHQ/shannon",
+    "primary_language": "TypeScript",
+    "stars_at_collection": 50580,
+    "default_branch": "main",
+    "description": "Shannon is an AI pentester for web applications and APIs. It analyzes your source code, identifies attack vectors, and executes real exploits to prove vulnerabilities before they reach production."
+  },
+  {
+    "owner_repo": "kelseyhightower/kubernetes-the-hard-way",
+    "url": "https://github.com/kelseyhightower/kubernetes-the-hard-way",
+    "primary_language": "Unknown",
+    "stars_at_collection": 50545,
+    "default_branch": "master",
+    "description": "Bootstrap Kubernetes the hard way. No scripts."
+  }
+]

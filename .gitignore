@@ -61,6 +61,8 @@ venv.bak/
 
 # Evaluation clones & transient cache
 tests/evaluation/cache/
+tests/evaluation/scale_work/
+scale_work/
 examples/demo_repo/
 brag-output/
 *.tmp

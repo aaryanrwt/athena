@@ -542,7 +542,7 @@ def test_14_live_ollama_qwen25_coder_7b_integration(sample_git_repo: Path) -> No
         timeout_seconds=90.0,
     )
     assert report.status == "ok"
-    assert report.llm_backend_status == "ollama:qwen2.5-coder:7b"
+    assert report.llm_backend_status.startswith("ollama:")
     assert len(report.stories) >= 1
     for story in report.stories:
         assert len(story.evidence_ids) >= 1

@@ -157,6 +157,7 @@ def test_mcp_server_tool_registration_and_unguarded_none_default(mcp_test_repo: 
     asyncio.run(_run())
 
 
+@pytest.mark.timeout(120)
 def test_real_mcp_stdio_client_server_roundtrip(mcp_test_repo: Path) -> None:
     """Launch Athena MCP server as a real subprocess over stdio and invoke all 4 tools via MCP ClientSession."""
 

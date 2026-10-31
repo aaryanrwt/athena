@@ -1,0 +1,27 @@
+name: Test PR comment action
+
+# Dogfoods the composite action from the checked-out ref. Uses `pull_request`
+# (never `pull_request_target`) so PR code runs with a read-only token on forks.
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  action-smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # sticky comment; same-repo PRs only (forks get a read-only token and are skipped)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run Athena action from this ref
+        uses: ./
+        with:
+          install-source: local

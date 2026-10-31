@@ -1,0 +1,11 @@
+.git
+.github
+.pytest_cache
+**/__pycache__
+.venv
+tests/evaluation/cache
+brag-output
+examples
+dist
+build
+*.egg-info

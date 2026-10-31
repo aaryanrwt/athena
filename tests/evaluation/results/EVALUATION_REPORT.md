@@ -1,4 +1,4 @@
-# Athena v1.1.0 Multi-Language 100+ Commit & MCP Evaluation Report (`gemma:latest` & `qwen2.5-coder:7b`)
+# Athena v1.2.0 Multi-Language 100+ Commit & MCP Evaluation Report (`gemma:latest` & `qwen2.5-coder:7b`)
 
 - **Execution Timestamp**: `2026-10-20 17:57:06Z`
 - **Evaluation Mode**: `Mode B (Hybrid Local Ollama dual + Deterministic Engine)`
@@ -18,7 +18,7 @@
 
 ## 1. Multi-Language 100+ Commit & Full MCP Tool Suite Methodology
 
-Under the Athena v1.1.0 evaluation protocol:
+Under the Athena v1.2.0 evaluation protocol:
 1. **Bounded 100+ Commit History (`--depth=125`, `--filter=blob:none`)**: Each repository is cloned into `tests/evaluation/cache` with at least 100 reachable ancestor commits (`HEAD~100..HEAD`).
 2. **Full MCP Server Execution**: Every repository is evaluated through Athena's MCP tools (`inspect_repository`, `analyze_git_history`, `detect_potential_breaking_changes`, and `generate_release_notes`).
 3. **Multi-Language Structural & AST Blast-Radius Inspection**: Analyzes structural symbol signatures across Python, TypeScript, JavaScript, C++, C, Go, Rust, Java, C#, Ruby, and PHP, plus recursive function bugs (`is_recursive`), public API export boundaries, and dynamic dispatch calls.

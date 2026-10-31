@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Athena: Local-First, Evidence-Backed Multi-Language Git & AST Change Intelligence, Breaking-Change, and Release Notes MCP Server"
 readme = "README.md"
 license = "Apache-2.0"
-keywords = ["mcp", "git", "ast", "release-notes", "breaking-changes", "static-analysis"]
+keywords = ["mcp", "git", "ast", "release-notes", "breaking-changes", "static-analysis", "github-action", "pre-commit", "code-review", "blast-radius"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -17,6 +17,8 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Environment :: Console",
 ]
 authors = [
     { name = "Aaryan Rawat", email = "aaryan28rwt@gmail.com" },
@@ -36,11 +38,14 @@ Homepage = "https://github.com/aaryanrwt/athena"
 Repository = "https://github.com/aaryanrwt/athena"
 Issues = "https://github.com/aaryanrwt/athena/issues"
 Security = "https://github.com/aaryanrwt/athena/blob/main/SECURITY.md"
+Documentation = "https://github.com/aaryanrwt/athena/tree/main/docs"
+Changelog = "https://github.com/aaryanrwt/athena/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-timeout>=2.3.0",
 ]
 security = [
     "pip-audit==2.10.1",
@@ -60,9 +65,11 @@ version = { attr = "athena.__version__" }
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 norecursedirs = ["cache", ".git", ".venv", "__pycache__", "build", "dist"]
 markers = [
     "ollama: live integration tests that require an explicitly enabled local Ollama service",
+    "timeout(seconds): per-test timeout (enforced when pytest-timeout is installed)",
 ]
 
 [tool.pyright]

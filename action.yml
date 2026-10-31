@@ -1,0 +1,138 @@
+name: "Athena Breaking-Change Audit"
+description: "Find breaking changes and the callers they affect between a PR base and head, and post one sticky PR comment."
+author: "Aaryan Rawat"
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  base:
+    description: "Base revision. Defaults to the pull request base SHA, or AUTO outside pull requests."
+    required: false
+    default: ""
+  target:
+    description: "Target revision."
+    required: false
+    default: "HEAD"
+  install-source:
+    description: "`git` installs Athena directly from GitHub. `local` installs from the checked-out workspace."
+    required: false
+    default: "git"
+  ref:
+    description: "Git ref (branch, tag, or commit) to install when install-source=git."
+    required: false
+    default: "main"
+  python-version:
+    description: "Python version to use."
+    required: false
+    default: "3.12"
+  working-directory:
+    description: "Repository directory to analyze, relative to the workspace."
+    required: false
+    default: "."
+  comment:
+    description: "Post or update the sticky PR comment (needs pull-requests: write on a same-repo PR)."
+    required: false
+    default: "true"
+  fail-on-breaking:
+    description: "Fail the step when potential breaking changes are found."
+    required: false
+    default: "false"
+  github-token:
+    description: "Token used to post the comment."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  breaking-changes:
+    description: "Number of potential breaking changes found (-1 if the report could not be produced)."
+    value: ${{ steps.audit.outputs.count }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Athena
+      shell: bash
+      env:
+        INSTALL_SOURCE: ${{ inputs.install-source }}
+        ATHENA_REF: ${{ inputs.ref }}
+        WORKDIR: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        python -m pip install --upgrade pip
+        case "$INSTALL_SOURCE" in
+          git)
+            python -m pip install "git+https://github.com/aaryanrwt/athena.git@${ATHENA_REF:-main}"
+            ;;
+          local)
+            python -m pip install "$GITHUB_WORKSPACE/$WORKDIR"
+            ;;
+          *)
+            echo "::error::install-source must be 'git' or 'local'"
+            exit 2
+            ;;
+        esac
+
+    - name: Run breaking-change audit
+      id: audit
+      shell: bash
+      env:
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_TARGET: ${{ inputs.target }}
+        WORKDIR: ${{ inputs.working-directory }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        set -euo pipefail
+        base="$INPUT_BASE"
+        if [ -z "$base" ]; then base="${PR_BASE_SHA:-AUTO}"; fi
+        report="$RUNNER_TEMP/athena_report.json"
+        # Athena treats refs as data; "--" style flag injection is rejected by the CLI.
+        athena breaking-changes "$GITHUB_WORKSPACE/$WORKDIR" --base "$base" --target "$INPUT_TARGET" > "$report" || {
+          echo "::warning::athena exited non-zero; see logs"
+        }
+        count="$(python "$ACTION_PATH/.github/action-scripts/render_comment.py" "$report" "$RUNNER_TEMP/athena_comment.md")"
+        echo "count=$count" >> "$GITHUB_OUTPUT"
+        cat "$RUNNER_TEMP/athena_comment.md" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Post or update sticky PR comment
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      run: |
+        set -uo pipefail
+        if [ "$HEAD_REPO" != "$REPO" ]; then
+          echo "::notice::Fork pull request: token is read-only, skipping comment (see job summary)."
+          exit 0
+        fi
+        marker='<!-- athena-breaking-changes -->'
+        body_file="$RUNNER_TEMP/athena_comment.md"
+        existing="$(gh api --paginate "repos/$REPO/issues/$PR_NUMBER/comments" \
+          --jq ".[] | select(.body | contains(\"$marker\")) | .id" | head -n 1)"
+        if [ -n "$existing" ]; then
+          gh api --method PATCH "repos/$REPO/issues/comments/$existing" -F "body=@$body_file" >/dev/null \
+            || echo "::warning::Could not update comment (is pull-requests: write granted?)"
+        else
+          gh api --method POST "repos/$REPO/issues/$PR_NUMBER/comments" -F "body=@$body_file" >/dev/null \
+            || echo "::warning::Could not create comment (is pull-requests: write granted?)"
+        fi
+
+    - name: Fail on breaking changes
+      if: inputs.fail-on-breaking == 'true'
+      shell: bash
+      env:
+        COUNT: ${{ steps.audit.outputs.count }}
+      run: |
+        if [ "$COUNT" != "0" ]; then
+          echo "::error::Athena found potential breaking changes (count=$COUNT)"
+          exit 1
+        fi

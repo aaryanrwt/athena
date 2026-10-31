@@ -1,0 +1,8 @@
+- id: athena-check
+  name: athena check (staged breaking changes)
+  description: Check staged changes for breaking API changes and the callers they affect.
+  entry: athena check --staged
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]

@@ -2,6 +2,21 @@
 
 All notable changes to Athena are recorded here. The project follows semantic versioning.
 
+## 1.2.0
+
+### Added
+
+- `athena ui` launches an interactive Studio Terminal UI with retro modular block typography, warm terracotta/coral palette, live Git status indicators, and one-click actions.
+- Automatic interactive TTY detection: running `athena` in an interactive terminal opens Athena Studio UI, while non-interactive piped execution seamlessly routes to the MCP JSON-RPC stdio server.
+- `athena init-mcp {claude-desktop,cursor,vscode}` prints ready MCP client configuration JSON; `--write --path <file>` writes it and never overwrites an existing file without `--force`.
+- `athena breaking-changes --format sarif` emits SARIF 2.1.0 with repository-relative paths and evidence-backed results.
+- `athena check --staged` deterministically analyzes staged changes against HEAD and exits non-zero when potential breaking changes are found (pre-commit friendly; no refs, index, or files are modified).
+- `athena report --html` renders a single-file static HTML breaking-change report (all content redacted and escaped, no scripts or external assets).
+- `athena semver-check --base --target --declared {major,minor,patch}` computes the required bump and exits 1 when the declared bump is too small (exit 2 on analysis errors).
+- Opt-in incremental parsed-symbol cache keyed by file content hash: `--cache-dir <dir>` or `ATHENA_CACHE_DIR`. Corrupt, mismatched, or oversized entries are treated as misses; keys are fixed-format hex digests so paths cannot traverse.
+- Fixed Pydantic validation error in `SymbolSignatureChange` when recursive functions produce `behavior_changed` defects.
+- `pytest-timeout` added to dev dependencies; the stdio MCP round-trip test now has a timeout.
+
 ## Unreleased
 
 ### Security
