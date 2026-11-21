@@ -17,6 +17,17 @@ Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP se
 3. **Track technical debt** (`athena debt`) by binding `# shortcut: <limit>, <when to upgrade>` comments directly to functions and classes.
 4. **Plug into any AI coding agent** (`athena install`)—Hermes, OpenClaw, Claude Code, Codex, Cursor, and Pi—with safe, backed-up configs.
 
+## Table of Contents
+
+- [Quickstart](#quickstart)
+- [Everyday Commands](#everyday-commands)
+- [How It Works](#how-it-works)
+- [Project & Folder Architecture](#project--folder-architecture)
+- [Real-World Benchmark (10 Languages, 100+ Commits Each)](#real-world-benchmark-10-languages-100-commits-each)
+- [Use It in GitHub Actions](#use-it-in-github-actions)
+- [Star History](#star-history)
+- [Further Reading](#further-reading)
+
 ---
 
 ## Quickstart
@@ -37,7 +48,7 @@ athena check --staged
 ```
 
 <p align="center">
-  <img src="assets/demo.gif" alt="Athena flagging a removed function and its callers" width="100%" />
+  <img src="assets/athena-brag.gif" alt="Athena flagging a removed function and its callers" width="100%" />
 </p>
 
 ---
@@ -72,6 +83,43 @@ flowchart LR
 - **Zero-LLM by default:** Everything runs deterministically offline. Local Ollama (`qwen2.5-coder:7b` / `gemma:latest`) is strictly optional (`--llm`).
 - **Never fakes completeness:** Unresolved dynamic calls (`getattr`, `eval`, oversized files) are tracked explicitly as `ResidualUnknown` (`unk_<sha256>`) records instead of being hidden.
 - **Context-friendly MCP:** Heavy tools support `detail="summary"` and return a `parent_evidence_id` that agents can page through with `inspect_analysis_view`.
+
+---
+
+## Project & Folder Architecture
+
+```text
+athena/
+├── src/athena/
+│   ├── cli.py                # CLI entry point (ui, mcp, graph, map, debt, install, check, report, semver-check)
+│   ├── tui.py                # Interactive Athena Studio Terminal UI
+│   ├── mcp_server.py         # 12-tool stdio MCP server with ToolAnnotations & hot/cold discovery
+│   ├── git_inspector.py      # Safe git diff/history extraction (GIT_NO_LAZY_FETCH=1, flag-injection guards)
+│   ├── ast_analyzer.py       # Python ast contract/recursion differ + 13-language structural scanner
+│   ├── graph_store.py        # Persistent .athena/graph.json builder, SHA-256 cache & atomic snapshots
+│   ├── graph_query.py        # Trigram+IDF scorer, hub-guarded BFS, god_nodes & shortest_path
+│   ├── repo_map.py           # <=2KB zero-search architectural export map
+│   ├── debt_tracker.py       # AST-bound `shortcut:` technical debt scanner
+│   ├── evidence_store.py     # Canonical ev_<sha256> & unk_<sha256> store + paged inspection
+│   ├── agent_installer.py    # Transactional installer for Hermes, OpenClaw, Claude Code, Codex, Cursor & Pi
+│   ├── gates.py              # Staged pre-commit & SemVer bump gates
+│   ├── sarif.py              # SARIF 2.1.0 exporter
+│   ├── html_report.py        # CSP-hardened single-file HTML report renderer
+│   ├── release_notes.py      # Deterministic & optional Ollama release-note pipeline
+│   ├── ollama_engine.py      # Optional local Ollama integration (gemma:latest / qwen2.5-coder:7b)
+│   ├── symbol_cache.py       # Content-addressed parsed symbol cache
+│   ├── mcp_config.py         # MCP client config generator (Claude Desktop, Cursor, VS Code)
+│   ├── verifier.py           # Ground-truth evidence verifier & hallucination guard
+│   ├── security.py           # Path jail, symlink defense, NTFS ADS guard & secret redaction
+│   └── models.py             # Pydantic v2 schemas
+├── skills/athena/SKILL.md    # Portable Athena agent protocol skill
+├── docs/                     # CLI examples, evaluation reports, CI/Docker integrations & demo tape
+├── tests/                    # Automated unit, MCP stdio, release-readiness & evaluation suites
+├── .github/                  # CI workflows (athena-audit, action-smoke) & PR comment renderer
+├── action.yml                # Reusable GitHub Action
+├── Dockerfile                # Rootless container image
+└── pyproject.toml            # Package & Python 3.12-3.15 metadata
+```
 
 ---
 
@@ -125,5 +173,7 @@ Posts one sticky breaking-change & blast-radius summary per PR. See [docs/integr
 - [Benchmarks & Evaluation](docs/evaluation.md)
 - [CI, Docker & Pre-Commit Integrations](docs/integrations.md)
 - [Changelog](CHANGELOG.md)
+- [Security Policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
 
 **Maintainer:** Aaryan Rawat ([`aaryan28rwt@gmail.com`](mailto:aaryan28rwt@gmail.com)) · Licensed under [Apache-2.0](LICENSE).

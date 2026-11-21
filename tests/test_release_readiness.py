@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
 from athena import __version__
@@ -25,6 +26,12 @@ def test_version_and_docs_sync() -> None:
     assert "v1.3.0" in readme
     skill = (_REPO_ROOT / "skills" / "athena" / "SKILL.md").read_text(encoding="utf-8")
     assert "query_code_graph" in skill and "shortcut:" in skill
+
+    # Every relative file link/img in README.md must exist on disk
+    for rel in re.findall(r'(?:src="|\]\()([^)"#]+)', readme):
+        if rel.startswith(("http://", "https://", "mailto:", "#")):
+            continue
+        assert (_REPO_ROOT / rel).exists(), f"Broken README link: {rel}"
 
 
 def test_mcp_catalog_parity_and_annotations() -> None:
