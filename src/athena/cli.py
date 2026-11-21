@@ -147,6 +147,45 @@ def main(argv: list[str] | None = None) -> int:
     p_sem.add_argument("--target", default="HEAD", help="Target revision (HEAD, tag, branch, or WORKING_TREE)")
     p_sem.add_argument("--declared", required=True, choices=["major", "minor", "patch"], help="Declared bump")
 
+    # graph command (v1.3.0)
+    p_graph = sub.add_parser("graph", help="Build or query Athena's persistent code knowledge graph")
+    p_graph.add_argument("repo_path", nargs="?", default=".", help="Path to local repository (default: .)")
+    p_graph.add_argument("--query", default="", help="Search query for trigram+IDF + hub-guarded BFS")
+    p_graph.add_argument("--depth", type=int, default=2, help="BFS depth (default: 2)")
+    p_graph.add_argument("--token-budget", type=int, default=2000, help="Token budget (default: 2000)")
+    p_graph.add_argument("--god-nodes", action="store_true", help="List top architectural hub nodes")
+    p_graph.add_argument("--path", nargs=2, metavar=("SRC", "DST"), help="Find shortest path between two symbols")
+    p_graph.add_argument("--rebuild", action="store_true", help="Force graph rebuild")
+
+    # map command (v1.3.0)
+    p_map = sub.add_parser("map", help="Emit a <=2000-char zero-search architectural export map")
+    p_map.add_argument("repo_path", nargs="?", default=".", help="Path to local repository (default: .)")
+    p_map.add_argument("--max-chars", type=int, default=2000, help="Maximum output characters (default: 2000)")
+    p_map.add_argument("--json", action="store_true", help="Output full JSON metadata")
+
+    # debt command (v1.3.0)
+    p_debt = sub.add_parser("debt", help="Scan for `shortcut:` technical debt markers bound to AST symbols")
+    p_debt.add_argument("repo_path", nargs="?", default=".", help="Path to local repository (default: .)")
+    p_debt.add_argument("--include-todos", action="store_true", help="Also include TODO/FIXME markers")
+
+    # install command (v1.3.0)
+    p_inst = sub.add_parser("install", help="Transactionally install Athena skills/hooks for AI coding agents")
+    p_inst.add_argument(
+        "--agent",
+        required=True,
+        choices=["hermes", "openclaw", "claude-code", "codex", "cursor", "pi"],
+        help="Target AI agent platform",
+    )
+    p_inst.add_argument("--target", default=".", help="Target project/workspace directory (default: .)")
+    p_inst.add_argument("--dry-run", action="store_true", help="Preview installation plan without writing files")
+
+    # view command (v1.3.0)
+    p_view = sub.add_parser("view", help="Page through a retained evidence bundle by ID and facet")
+    p_view.add_argument("evidence_id", help="Retained evidence ID (ev_<sha256>)")
+    p_view.add_argument("--facet", required=True, help="Facet name to inspect")
+    p_view.add_argument("--offset", type=int, default=0, help="Start offset")
+    p_view.add_argument("--limit", type=int, default=50, help="Page size")
+
     args = parser.parse_args(argv)
 
     cache_dir = args.cache_dir or os.environ.get("ATHENA_CACHE_DIR") or None
@@ -294,6 +333,65 @@ def main(argv: list[str] | None = None) -> int:
         if res.get("status") != "ok":
             return 2
         return 0 if res.get("gate_passed") else 1
+
+    if args.command == "graph":
+        from athena.graph_query import get_god_nodes, get_graph_stats, query_code_graph, shortest_path_between
+        from athena.graph_store import DEFAULT_GRAPH_MANAGER
+
+        try:
+            cg = DEFAULT_GRAPH_MANAGER.get_or_build(args.repo_path, rebuild=args.rebuild)
+            if args.path:
+                out = shortest_path_between(cg, args.path[0], args.path[1])
+            elif args.god_nodes:
+                out = {"status": "ok", "god_nodes": get_god_nodes(cg)}
+            elif args.query:
+                out = query_code_graph(cg, args.query, depth=args.depth, token_budget=args.token_budget)
+            else:
+                out = get_graph_stats(cg)
+            print(json.dumps(out, indent=2))
+            return 0 if out.get("status") == "ok" else 1
+        except AthenaValidationError as exc:
+            print(json.dumps({"status": "error", "error_code": exc.code, "error_message": exc.message}, indent=2))
+            return 2
+
+    if args.command == "map":
+        from athena.repo_map import build_repo_map
+
+        try:
+            res = build_repo_map(args.repo_path, max_chars=args.max_chars)
+            if args.json:
+                print(json.dumps(res, indent=2))
+            else:
+                print(res["map_text"])
+            return 0
+        except AthenaValidationError as exc:
+            print(json.dumps({"status": "error", "error_code": exc.code, "error_message": exc.message}, indent=2))
+            return 2
+
+    if args.command == "debt":
+        from athena.debt_tracker import scan_shortcut_debt
+
+        try:
+            res = scan_shortcut_debt(args.repo_path, include_todos=args.include_todos).model_dump(mode="json")
+            print(json.dumps(res, indent=2))
+            return 0
+        except AthenaValidationError as exc:
+            print(json.dumps({"status": "error", "error_code": exc.code, "error_message": exc.message}, indent=2))
+            return 2
+
+    if args.command == "install":
+        from athena.agent_installer import install_agent_integration
+
+        res = install_agent_integration(args.target, args.agent, dry_run=args.dry_run)
+        print(json.dumps(res, indent=2))
+        return 0 if res.get("status") == "ok" else 1
+
+    if args.command == "view":
+        from athena.evidence_store import DEFAULT_EVIDENCE_STORE
+
+        res = DEFAULT_EVIDENCE_STORE.inspect_view(args.evidence_id, args.facet, offset=args.offset, limit=args.limit)
+        print(json.dumps(res, indent=2))
+        return 0 if res.get("status") == "ok" else 1
 
     return 0
 

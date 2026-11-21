@@ -77,3 +77,7 @@ brag-output/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Private research, cloned competitor repos, and internal secrets/docs (never push)
+private/
+.athena/

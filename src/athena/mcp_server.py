@@ -14,13 +14,18 @@ except ImportError:  # pragma: no cover - fallback for mcp 1.x
 from mcp.types import ToolAnnotations
 
 from athena import __version__
+from athena.debt_tracker import scan_shortcut_debt
+from athena.evidence_store import DEFAULT_EVIDENCE_STORE, resolve_completeness
 from athena.git_inspector import inspect_repository_state
+from athena.graph_query import get_god_nodes, get_graph_stats, query_code_graph as _query_graph_engine, shortest_path_between
+from athena.graph_store import DEFAULT_GRAPH_MANAGER
 from athena.ollama_engine import DEFAULT_ENABLE_LLM, DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL
 from athena.release_notes import (
     run_breaking_change_detection,
     run_git_history_analysis,
     run_release_notes_generation,
 )
+from athena.repo_map import build_repo_map
 from athena.security import redact_secrets
 
 
@@ -116,6 +121,7 @@ def analyze_git_history(
     max_commits: int = 100,
     use_llm: bool = DEFAULT_ENABLE_LLM,
     ollama_model: str = DEFAULT_OLLAMA_MODEL,
+    detail: str = "complete",
 ) -> dict[str, Any]:
     """Analyze Git history and code changes between two revisions with AST analysis and optional LLM synthesis."""
     if not isinstance(repo_path, str) or not repo_path.strip():
@@ -152,7 +158,16 @@ def analyze_git_history(
             ollama_url=DEFAULT_OLLAMA_BASE_URL,
             ollama_model=str(ollama_model or DEFAULT_OLLAMA_MODEL),
         )
-        return report.model_dump(mode="json")
+        payload = report.model_dump(mode="json")
+        if detail == "summary":
+            return DEFAULT_EVIDENCE_STORE.retain(
+                "git_history_analysis",
+                payload,
+                completeness=resolve_completeness(
+                    skipped_files=len(payload.get("coverage", {}).get("skipped_files", []) or [])
+                ),
+            )
+        return payload
     except Exception as exc:
         return {
             "status": "error",
@@ -258,6 +273,7 @@ def detect_potential_breaking_changes(
     include_low_confidence: bool = False,
     use_llm: bool = DEFAULT_ENABLE_LLM,
     ollama_model: str = DEFAULT_OLLAMA_MODEL,
+    detail: str = "complete",
 ) -> dict[str, Any]:
     """Detect potential breaking changes requiring human review with verified evidence and caller impact."""
     if not isinstance(repo_path, str) or not repo_path.strip():
@@ -282,7 +298,18 @@ def detect_potential_breaking_changes(
             ollama_url=DEFAULT_OLLAMA_BASE_URL,
             ollama_model=str(ollama_model or DEFAULT_OLLAMA_MODEL),
         )
-        return report.model_dump(mode="json")
+        payload = report.model_dump(mode="json")
+        if detail == "summary":
+            cov = payload.get("coverage") or {}
+            return DEFAULT_EVIDENCE_STORE.retain(
+                "breaking_change_report",
+                payload,
+                completeness=resolve_completeness(
+                    skipped_files=len(cov.get("skipped_files", []) or []),
+                    unresolved_unknowns=int(cov.get("unresolved_dynamic_calls_count", 0) or 0),
+                ),
+            )
+        return payload
     except Exception as exc:
         return {
             "status": "error",
@@ -400,6 +427,185 @@ def generate_verified_release_brief(
         use_llm=use_llm,
         ollama_model=ollama_model,
     )
+
+
+@mcp_app.tool(
+    name="query_code_graph",
+    description=(
+        "Query Athena's persistent, zero-LLM code knowledge graph using trigram+IDF scoring and hub-guarded BFS "
+        "(strictly bounded by token_budget). Set detail='summary' to retain the full graph in-session."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def query_code_graph_tool(
+    repo_path: str,
+    query: str = "",
+    depth: int = 2,
+    token_budget: int = 2000,
+    include_tests: bool = False,
+    rebuild: bool = False,
+    detail: str = "complete",
+) -> dict[str, Any]:
+    """Build/load the code knowledge graph and run a token-budgeted query or return graph stats."""
+    try:
+        cg = DEFAULT_GRAPH_MANAGER.get_or_build(repo_path, rebuild=bool(rebuild))
+        if query.strip():
+            result = _query_graph_engine(
+                cg,
+                query,
+                depth=depth,
+                token_budget=token_budget,
+                include_tests=include_tests,
+            )
+        else:
+            result = get_graph_stats(cg)
+        if detail == "summary":
+            return DEFAULT_EVIDENCE_STORE.retain(
+                "code_graph_query",
+                result,
+                completeness=cg.completeness,
+            )
+        return result
+    except Exception as exc:
+        return {
+            "status": "error",
+            "error_code": "GRAPH_QUERY_ERROR",
+            "error_message": f"Unexpected error querying code graph: {_safe_exception_detail(exc)}",
+        }
+
+
+@mcp_app.tool(
+    name="get_repo_map",
+    description=(
+        "Return a compact (<=2000 chars) zero-search architectural export map of shared modules and symbols "
+        "in the repository, sanitized against prompt injection."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def get_repo_map_tool(
+    repo_path: str,
+    max_chars: int = 2000,
+) -> dict[str, Any]:
+    """Generate a compact zero-search export map for the repository."""
+    try:
+        return build_repo_map(repo_path, max_chars=max_chars)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "error_code": "REPO_MAP_ERROR",
+            "error_message": f"Unexpected error building repo map: {_safe_exception_detail(exc)}",
+        }
+
+
+@mcp_app.tool(
+    name="scan_debt",
+    description=(
+        "Scan repository source files for `shortcut: <limit>, <when to upgrade>` debt markers "
+        "(and optional TODO/FIXME) bound to AST enclosing symbols."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def scan_debt_tool(
+    repo_path: str,
+    include_todos: bool = False,
+) -> dict[str, Any]:
+    """Scan repository for `shortcut:` technical debt markers."""
+    try:
+        return scan_shortcut_debt(repo_path, include_todos=bool(include_todos)).model_dump(mode="json")
+    except Exception as exc:
+        return {
+            "status": "error",
+            "error_code": "DEBT_SCAN_ERROR",
+            "error_message": f"Unexpected error scanning debt: {_safe_exception_detail(exc)}",
+        }
+
+
+@mcp_app.tool(
+    name="inspect_analysis_view",
+    description=(
+        "Page through a retained evidence bundle (`ev_<sha256>`) by facet, offset, and limit "
+        "without overflowing the context window."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def inspect_analysis_view_tool(
+    evidence_id: str,
+    facet: str,
+    offset: int = 0,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Inspect a paged slice of a retained evidence bundle."""
+    return DEFAULT_EVIDENCE_STORE.inspect_view(
+        evidence_id=evidence_id,
+        facet=facet,
+        offset=offset,
+        limit=limit,
+    )
+
+
+_TOOL_CATALOG_METADATA: tuple[dict[str, Any], ...] = (
+    {"name": "inspect_repository", "category": "git", "tier": "hot", "summary": "Inspect repo branches, tags, and dirty state."},
+    {"name": "get_repo_map", "category": "graph", "tier": "hot", "summary": "2KB zero-search architectural export map."},
+    {"name": "query_code_graph", "category": "graph", "tier": "hot", "summary": "Trigram+IDF + hub-guarded BFS code graph query."},
+    {"name": "detect_potential_breaking_changes", "category": "analysis", "tier": "hot", "summary": "AST signature diffing & caller blast radius."},
+    {"name": "inspect_analysis_view", "category": "evidence", "tier": "hot", "summary": "Page through retained ev_<sha256> bundles."},
+    {"name": "analyze_git_history", "category": "analysis", "tier": "cold", "summary": "Group commits/diffs into evidence-backed stories."},
+    {"name": "generate_release_notes", "category": "release", "tier": "cold", "summary": "Render audience-tailored Markdown release notes."},
+    {"name": "scan_debt", "category": "debt", "tier": "cold", "summary": "Scan `shortcut:` markers bound to AST symbols."},
+    {"name": "analyze_change_graph", "category": "analysis", "tier": "cold", "summary": "Alias for analyze_git_history."},
+    {"name": "verify_breaking_and_doc_drift", "category": "analysis", "tier": "cold", "summary": "Alias for detect_potential_breaking_changes."},
+    {"name": "generate_verified_release_brief", "category": "release", "tier": "cold", "summary": "Alias for generate_release_notes."},
+    {"name": "discover_tools", "category": "meta", "tier": "hot", "summary": "Search Athena's hot/cold MCP tool catalog."},
+)
+
+
+@mcp_app.tool(
+    name="discover_tools",
+    description="Search Athena's MCP tool catalog by keyword or category (rea-style progressive discovery).",
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def discover_tools_tool(
+    query: str = "",
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Return matching Athena MCP tools and their hot/cold tier metadata."""
+    q = query.strip().lower()
+    cap = max(1, min(limit, 50))
+    matches = [
+        item
+        for item in _TOOL_CATALOG_METADATA
+        if not q or q in item["name"].lower() or q in item["category"].lower() or q in item["summary"].lower()
+    ]
+    return {
+        "status": "ok",
+        "total_catalog_tools": len(_TOOL_CATALOG_METADATA),
+        "matches": matches[:cap],
+    }
 
 
 def run_mcp_stdio_server() -> None:

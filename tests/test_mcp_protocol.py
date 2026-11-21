@@ -114,7 +114,14 @@ def test_mcp_server_tool_registration_and_unguarded_none_default(mcp_test_repo: 
                 assert dumped_ann["readOnlyHint"] is True, f"Tool {t.name} missing readOnlyHint=True"
                 assert dumped_ann["destructiveHint"] is False, f"Tool {t.name} missing destructiveHint=False"
                 assert dumped_ann["idempotentHint"] is True, f"Tool {t.name} missing idempotentHint=True"
-            if t.name == "inspect_repository":
+            if t.name in {
+                "inspect_repository",
+                "query_code_graph",
+                "get_repo_map",
+                "scan_debt",
+                "inspect_analysis_view",
+                "discover_tools",
+            }:
                 assert dumped_ann["openWorldHint"] is False
             else:
                 # Every analysis/release tool can optionally contact the configured

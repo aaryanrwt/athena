@@ -43,12 +43,50 @@ athena breaking-changes . --base main --target HEAD
 - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
   with:
     fetch-depth: 0
-- uses: aaryanrwt/athena@v1.2.0
+- uses: aaryanrwt/athena@v1.3.0
 ```
 
 Posts one sticky comment per PR. Also available as a Docker image and a pre-commit hook (`athena check --staged`). Details, permissions, and the safe `pull_request` vs `pull_request_target` guidance are in [docs/integrations.md](docs/integrations.md).
 
-## What's Included in v1.2.0
+## What's New in v1.3.0
+
+Athena **v1.3.0** evolves from a diff-only analyzer into a persistent, local-first codebase intelligence layer for developers and AI coding agents (Python 3.12–3.15):
+
+- **Persistent Code Knowledge Graph (`athena graph`, `query_code_graph`)**: Builds an incremental, zero-LLM AST + structural graph (`.athena/graph.json`) with SHA-256 file caching, deterministic community clustering, test/utility down-weighting in `god_nodes`, and trigram+IDF + hub-guarded BFS querying (`token_budget=2000`, no vector DB required).
+- **Zero-Search Codebase Map (`athena map`, `get_repo_map`)**: Generates a `<=2000`-character architectural export map of shared modules, sanitized against prompt injection.
+- **`shortcut:` Debt Ledger (`athena debt`, `scan_debt`)**: Scans `shortcut: <limit>, <when to upgrade>` comments bound to enclosing AST symbols and flags missing upgrade triggers.
+- **Cryptographic Evidence & Retained Paging (`ev_<sha256>`, `unk_<sha256>`, `inspect_analysis_view`)**: Tracks dynamic dispatch (`getattr`, `eval`, oversized/partial parses) as explicit `ResidualUnknown` records, enforces strict `completeness` reporting, and supports `detail="summary"` with paged slice inspection.
+- **Transactional Cross-Agent Installer (`athena install`)**: Installs skills and session-scoped hooks with SHA-256 backups and readback verification for **Hermes**, **OpenClaw**, **Claude Code**, **Codex**, **Cursor**, and **Pi**.
+
+## v1.3.0 Real-World 10-Language Benchmark (470,275★)
+
+Tested offline on **10 fresh 10k+-star repositories** across 10 languages (`HEAD~15..HEAD` history + breaking-change scan + cold/warm graph build + `repo_map` + `query_code_graph` + `scan_debt`): **10/10 passed with 0 errors**.
+
+| Repository | Language | Stars | Files | Nodes / Edges | Cold -> Warm Build | Token Reduction (`map` + `graph`) | Breaking Findings |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `pallets/flask` | Python | 75,300 | 83 | 1,002 / 3,466 | 3,704ms -> 700ms | **64.0x** | 0 |
+| `colinhacks/zod` | TypeScript | 44,376 | 526 | 3,582 / 3,171 | 24,775ms -> 1,648ms | **379.7x** | 2 |
+| `gin-gonic/gin` | Go | 89,561 | 99 | 1,619 / 1,625 | 4,105ms -> 578ms | **80.2x** | 1 |
+| `BurntSushi/ripgrep` | Rust | 70,120 | 103 | 3,439 / 3,336 | 5,348ms -> 914ms | **198.5x** | 1 |
+| `expressjs/express` | JavaScript | 69,671 | 142 | 267 / 126 | 10,036ms -> 391ms | **69.9x** | 0 |
+| `nlohmann/json` | C++ | 50,941 | 675 | 2,352 / 2,062 | 20,588ms -> 1,808ms | **1,146.4x** | 0 |
+| `google/gson` | Java | 24,236 | 268 | 1,037 / 769 | 11,088ms -> 897ms | **217.5x** | 7 |
+| `sinatra/sinatra` | Ruby | 12,451 | 147 | 1,295 / 1,148 | 5,074ms -> 529ms | **77.3x** | 1 |
+| `AutoMapper/AutoMapper` | C# | 10,176 | 521 | 5,757 / 5,236 | 23,608ms -> 1,894ms | **227.3x** | 0 |
+| `guzzle/guzzle` | PHP | 23,443 | 149 | 3,519 / 3,370 | 13,093ms -> 963ms | **256.5x** | 0 |
+
+### Cross-Agent & CLI Quick Reference
+
+| Command / Tool | Purpose | Key Output |
+| :--- | :--- | :--- |
+| `athena graph . --query "..."` | Query persistent code knowledge graph | Hub-guarded BFS subgraph (`<=2000` tokens) |
+| `athena map .` | Zero-search architectural export map | `<=2000`-char sanitized folder/symbol summary |
+| `athena debt .` | Scan `shortcut: <limit>, <upgrade>` markers | AST-bound debt ledger + missing trigger flags |
+| `athena install --agent <name>` | Install skills/hooks (`hermes`, `openclaw`, `claude-code`, `codex`, `cursor`, `pi`) | Transactional write + `.athena.backup.<sha256>` |
+| `athena view <ev_id> --facet <name>` | Page retained evidence bundles | Bounded slice (`offset`, `limit`, `has_more`) |
+| `athena check --staged` | Pre-commit breaking-change gate | Non-zero exit on breaking staged API changes |
+
+## What Was Included in v1.2.0
 
 Athena v1.2.0 expands from an offline MCP server into a complete developer change-intelligence toolkit:
 
@@ -109,23 +147,38 @@ Athena is an open-source, local-first Model Context Protocol (MCP) server and de
 
 ---
 
+## Star History
+
+<a href="https://www.star-history.com/#aaryanrwt/athena&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=aaryanrwt/athena&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=aaryanrwt/athena&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=aaryanrwt/athena&type=Date" />
+  </picture>
+</a>
+
+---
+
 ## Architecture
 
 ```mermaid
 flowchart TD
     subgraph Client["MCP Clients & CLI"]
-        CLI["Athena CLI v1.2.0\n(athena / python -m athena.cli)"]
+        CLI["Athena CLI v1.3.0\n(athena / python -m athena.cli)"]
         IDE["MCP Clients\n(Claude Desktop, Cursor, VS Code)"]
     end
 
-    subgraph Server["Athena MCP Server (stdio)"]
-        MCP["athena.mcp_server\n(7 Read-Only Annotated Tools & Schema Validation)"]
+    subgraph Server["Athena MCP Server (stdio, 12 Annotated Tools)"]
+        MCP["athena.mcp_server\n(Hot/Cold Discovery & Retained Paging)"]
+        EVSTORE["Evidence & Unknown Store\n(ev_<sha256>, unk_<sha256>, detail=summary)"]
         SEC["Security & Redaction Gate\n- Path Jail & Symlink Defense\n- CLI Flag Injection Defense\n- Bearer / Key Redaction"]
     end
 
     subgraph Pipeline["Athena Deterministic Analysis Pipeline (Mode A)"]
         GIT["Git Inspector\n(100+ Commit Range, Partial Clone Batching, Diffs)"]
         AST["Multi-Language AST & Structural Analyzer\n- Python ast Contract & Recursion Differ\n- TS/JS/C++/C/Go/Rust/Java/C#/Ruby/PHP Scanner\n- Public API & None-Guard Analysis"]
+        GRAPH["Persistent Code Graph & Repo Map\n(.athena/graph.json, Trigram+IDF BFS, <=2KB Map)"]
+        DEBT["Shortcut Debt Tracker\n(AST-Bound shortcut: & Upgrade Triggers)"]
         BLAST["Blast-Radius & Caller Engine\n(Self-Recursion, Static Import, Arity & Dynamic Call Tracing)"]
         DRIFT["Doc-Drift Scanner\n(Markdown Stale Symbol & Call-Arity Extraction)"]
         VERIFY["Evidence & Coverage Verifier\n(SHA, Line Span, Parse Coverage & Confidence)"]
@@ -143,8 +196,11 @@ flowchart TD
 
     CLI --> SEC
     IDE --> MCP
-    MCP --> SEC
+    MCP --> EVSTORE
+    EVSTORE --> SEC
     SEC --> GIT
+    SEC --> GRAPH
+    GRAPH --> DEBT
     GIT --> AST
     AST --> BLAST
     BLAST --> DRIFT
