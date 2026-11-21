@@ -7,8 +7,14 @@
 > **Your git diff says it is safe. Athena checks the callers.**
 
 [![CI](https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml/badge.svg)](https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml)
+[![Release](https://img.shields.io/badge/release-v1.3.0-D97757)](https://github.com/aaryanrwt/athena/releases/tag/v1.3.0)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](https://www.python.org/)
+[![MCP](https://img.shields.io/badge/MCP-stdio%20%7C%2012%20tools-6E56CF)](https://modelcontextprotocol.io/)
+[![Offline First](https://img.shields.io/badge/core-100%25%20offline%20%7C%200--LLM%20default-2EA043)](#how-it-works)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/aaryanrwt/athena?style=flat&color=yellow)](https://github.com/aaryanrwt/athena/stargazers)
+[![M8ven Score](https://m8ven.ai/badge/mcp/aaryanrwt/athena)](https://m8ven.ai/mcp/aaryanrwt/athena?s=readme)
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/aaryanrwt/badge.svg)](https://hub.xerj.org/contributors/aaryanrwt)
 
 Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP server). It runs offline on your machine—no cloud APIs or vector databases required—to help both developers and AI coding agents:
 
@@ -46,10 +52,6 @@ athena map .
 # Check for breaking changes before committing
 athena check --staged
 ```
-
-<p align="center">
-  <img src="assets/athena-brag.gif" alt="Athena flagging a removed function and its callers" width="100%" />
-</p>
 
 ---
 
