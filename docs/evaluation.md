@@ -1,3 +1,22 @@
+## v1.3.0 Real-World Benchmark (10 Languages, 100+ Commits Each)
+
+In **v1.3.0**, Athena was tested offline against **10 fresh 10k+-star repositories** (`396,964` cumulative GitHub stars) across 10 languages, inspecting `100` commits (`HEAD~100..HEAD`) and `8,804` source files with **0 errors (`10/10` pass)**:
+
+| Repository | Language | Stars | Commits | Files | Graph Nodes / Edges | Cold -> Warm Cache | Token Reduction | Breaking Findings |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `psf/requests` | Python | 54,735 | 100 | 37 | 744 / 2,407 | 1.8s -> 0.4s | **49.0x** | 15 |
+| `trpc/trpc` | TypeScript | 40,847 | 100 | 1,477 | 8,012 / 11,200 | 63.1s -> 4.9s | **636.7x** | 28 |
+| `spf13/cobra` | Go | 44,809 | 100 | 36 | 647 / 623 | 2.0s -> 0.3s | **62.8x** | 8 |
+| `serde-rs/serde` | Rust | 10,993 | 100 | 208 | 2,918 / 2,710 | 7.9s -> 1.2s | **130.9x** | 71 |
+| `axios/axios` | JavaScript | 109,387 | 100 | 287 | 1,142 / 909 | 18.3s -> 0.7s | **167.5x** | 4 |
+| `gabime/spdlog` | C++ | 29,787 | 100 | 155 | 383 / 230 | 4.7s -> 0.4s | **138.7x** | 38 |
+| `square/okhttp` | Java | 47,116 | 100 | 647 | 5,650 / 5,003 | 29.3s -> 2.3s | **483.4x** | 0 |
+| `rubocop/rubocop` | Ruby | 12,925 | 100 | 1,797 | 22,518 / 20,721 | 59.9s -> 7.4s | **1,249.1x** | 11 |
+| `JamesNK/Newtonsoft.Json` | C# | 11,321 | 100 | 951 | 2,780 / 1,829 | 43.1s -> 2.9s | **770.1x** | 4 |
+| `laravel/framework` | PHP | 35,024 | 100 | 3,209 | 41,105 / 37,897 | 251.0s -> 14.0s | **2,067.5x** | 2 |
+
+---
+
 ## Public Repository Evaluation & Benchmark Results (v1.2.0)
 
 Athena includes an automated, reproducible evaluation harness (`tests/evaluation/run_evaluation.py`). Across its evaluation suites, Athena has cloned and executed its full MCP tool suite against **140+ distinct actively maintained open-source repositories** across **11 programming languages**.
