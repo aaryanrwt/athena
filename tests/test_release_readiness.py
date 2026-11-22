@@ -87,3 +87,22 @@ def test_utf8_bom_comment_fabrication_and_collision_regressions(tmp_path: Path) 
     assert nb["status"] == "ok" and any(x["label"] == "first_fn" for x in nb["neighbors"])
     comm = get_community(cg, 0)
     assert comm["status"] == "ok" and len(comm["members"]) >= 1
+
+
+def test_metaclass_and_runtime_patching_flagged_as_unknowns(tmp_path: Path) -> None:
+    repo = tmp_path / "meta_repo"
+    repo.mkdir()
+    (repo / "meta.py").write_text(
+        "class Meta(type):\n"
+        "    pass\n\n"
+        "class Plugin(metaclass=Meta):\n"
+        "    def __init_subclass__(cls, **kwargs):\n"
+        "        setattr(cls, 'injected', True)\n",
+        encoding="utf-8",
+    )
+    cg = build_code_graph(repo, persist=False, use_cache=False)
+    assert cg.completeness == "partial"
+    details = " ".join(u.detail for u in cg.unknowns)
+    assert "metaclass" in details
+    assert "__init_subclass__" in details
+    assert "setattr" in details

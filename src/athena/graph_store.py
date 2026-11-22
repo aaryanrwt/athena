@@ -318,12 +318,41 @@ def _extract_python_file_graph(
                     evidence_id=canonical_evidence_id({"src": mod_id, "tgt": cls_id, "rel": "contains"}),
                 )
             )
+            for kw in stmt.keywords:
+                if kw.arg == "metaclass":
+                    unk_payload = {"kind": "dynamic_dispatch", "file": rel_path, "line": stmt.lineno, "sym": f"{stmt.name}:metaclass"}
+                    unknowns.append(
+                        ResidualUnknownRecord(
+                            unknown_id=canonical_unknown_id(unk_payload),
+                            kind="dynamic_dispatch",
+                            severity="medium",
+                            file_path=rel_path,
+                            line=stmt.lineno,
+                            symbol=cls_id,
+                            detail=f"Class `{stmt.name}` uses a custom metaclass; synthesized attributes are not statically resolved.",
+                            remediation="Inspect metaclass definition for runtime-injected methods or fields.",
+                        )
+                    )
             for base in stmt.bases:
                 base_name = ast.unparse(base) if hasattr(ast, "unparse") else getattr(base, "id", "")
                 if base_name:
                     call_hints.append({"source": cls_id, "target_name": base_name.split(".")[-1], "relation": "inherits", "lang": "python"})
             for child in stmt.body:
                 if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if child.name == "__init_subclass__":
+                        unk_payload = {"kind": "dynamic_dispatch", "file": rel_path, "line": child.lineno, "sym": f"{stmt.name}.__init_subclass__"}
+                        unknowns.append(
+                            ResidualUnknownRecord(
+                                unknown_id=canonical_unknown_id(unk_payload),
+                                kind="dynamic_dispatch",
+                                severity="medium",
+                                file_path=rel_path,
+                                line=child.lineno,
+                                symbol=cls_id,
+                                detail=f"Class `{stmt.name}` defines `__init_subclass__`; subclass hooks may mutate attributes at runtime.",
+                                remediation="Inspect `__init_subclass__` for runtime-injected attributes.",
+                            )
+                        )
                     meth_id = f"sym:{rel_path}::{stmt.name}.{child.name}"
                     defined_locals[child.name] = meth_id
                     nodes.append(
@@ -416,7 +445,7 @@ def _collect_python_calls(
         elif isinstance(callee, ast.Attribute):
             name = callee.attr
 
-        if name in {"getattr", "eval", "exec", "import_module", "__import__"}:
+        if name in {"getattr", "setattr", "delattr", "eval", "exec", "import_module", "__import__", "globals", "locals"}:
             unk_payload = {"kind": "dynamic_dispatch", "file": rel_path, "line": getattr(node, "lineno", 0), "sym": name}
             unknowns.append(
                 ResidualUnknownRecord(
