@@ -32,6 +32,34 @@ Tested offline with `0` errors (`13/13` pass) across `24,766` source files, `175
 
 ---
 
+## v1.3.1 Hybrid Rust Acceleration Benchmark & Parity Audit
+
+Athena preserves 100% `pip install athena-mcp` compatibility and pure-Python fallback while eliminating Git subprocess bottlenecks and shifting verified hot kernels to Rust PyO3 extensions via [`EL4CTEO/fast-anything`](https://github.com/EL4CTEO/fast-anything) (`v0.8.1`, PyO3 `0.30.1`):
+
+1. **Batched Git Blob Reads (`git_inspector.py` / `ast_analyzer.py`)**: Replaced per-file `git cat-file -s` + `git show` subprocess calls with batched binary `git cat-file --batch-check` + `cat-file --batch` (`read_blobs_at_revision`), cutting `athena` (`v1.0.0..v1.3.1`) breaking-change analysis from **12,737.13 ms -> 3,169.82 ms (`4.02x` faster)** with identical findings and coverage.
+2. **Verified Rust PyO3 Hot-Path Kernels** (`fast-anything verify` + `fast-anything bench` on `python src/_fa_workload.py`, **7.12s -> 4.99s**, `1.4x` end-to-end median of 5 interleaved runs):
+
+| Function | Per-Call Speedup | Equivalence Verification | Status |
+| :--- | :--- | :--- | :--- |
+| `athena.security.redact_secrets` | **41x** (`237.3us -> 5.8us`) | `776/776` (500 recorded + 76 edge + 200 derived) | **Enabled** |
+| `athena._fast_kernels.score_graph_trigrams` | **8.8x** (`37.3ms -> 4.2ms`) | `330/330` (30 recorded + 100 edge + 200 derived) | **Enabled** |
+| `athena._fast_kernels.compute_community_assignments` | **3.5x** (`9.6ms -> 2.7ms`) | `206/206` (4 recorded + 48 edge + 154 derived) | **Enabled** |
+| `athena._fast_kernels.extract_structural_symbols_raw` | **1.9x** (`16.2us -> 8.6us`) | `800/800` (500 recorded + 100 edge + 200 derived) | **Enabled** |
+| `athena._fast_kernels.parse_unified_diff_raw` | `0.32x` (`1.6ms -> 4.8ms` slower via FFI) | `229/229` identical, rejected by speedup gate | Kept in Python |
+
+3. **Real-World Live Cross-Verification on `NVIDIA/cuvs`** (`1,269` files, `6,152` nodes, `7,188` edges, `HEAD~50..HEAD`):
+
+| Benchmark Stage | Pure Python (`FAST_ANYTHING_DISABLE=1`) | Hybrid Rust Enabled | Speedup | Exact Parity Check |
+| :--- | ---: | ---: | ---: | :--- |
+| `build_code_graph` | 31,390.27 ms | **3,259.24 ms** | **9.63x** | Exact `ev_ddbf63fa...5b07d`, `6,152` nodes, `7,188` edges |
+| 20 × `query_code_graph` | 7,804.16 ms | **1,809.38 ms** | **4.31x** | Identical seeds, subgraphs & token counts across all 20 queries |
+| `run_breaking_change_detection` | 11,660.09 ms | **10,761.80 ms** | **1.08x** | Identical `10` breaking-change findings & severities |
+| **Combined Workflow Total** | **50,854.52 ms** | **15,830.43 ms** | **3.21x** | **100% zero degradation (`completeness="partial"`)** |
+
+4. **Test Suite Parity**: Full `pytest -q --ignore=tests/evaluation` passed **166 passed, 1 skipped in 123.70s** (Rust enabled) and **166 passed, 1 skipped in 134.90s** (`FAST_ANYTHING_DISABLE=1` pure-Python fallback), down from **173.20s** before optimization, alongside dedicated automated parity assertions in `tests/test_rust_parity.py`.
+
+---
+
 ## v1.3.0 Real-World Benchmark (10 Languages, 100+ Commits Each)
 
 In **v1.3.0**, Athena was tested offline against **10 fresh 10k+-star repositories** (`396,964` cumulative GitHub stars) across 10 languages, inspecting `100` commits (`HEAD~100..HEAD`) and `8,804` source files with **0 errors (`10/10` pass)**:

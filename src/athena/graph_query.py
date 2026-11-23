@@ -11,17 +11,11 @@ import re
 from collections import defaultdict, deque
 from typing import Any
 
+from athena._fast_kernels import score_graph_trigrams
 from athena.graph_store import CodeGraph, GraphEdge
 
 _CHARS_PER_TOKEN = 4
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
-
-
-def _trigrams(text: str) -> set[str]:
-    norm = f" {text.lower()} "
-    if len(norm) < 3:
-        return {norm}
-    return {norm[i : i + 3] for i in range(len(norm) - 2)}
 
 
 def _build_adj(graph: CodeGraph) -> tuple[dict[str, list[tuple[str, GraphEdge]]], dict[str, int]]:
@@ -69,53 +63,15 @@ def query_code_graph(
     hub_cap = _p99_hub_threshold(degree)
 
     # Single-pass trigram + IDF scoring
-    doc_freq: dict[str, int] = defaultdict(int)
-    node_trigrams: dict[str, set[str]] = {}
-    for n in graph.nodes:
-        if not include_tests and n.is_test_or_utility:
-            continue
-        tris = _trigrams(f"{n.label} {n.file_path}")
-        node_trigrams[n.id] = tris
-        for term in terms:
-            if term in n.label.lower() or term in n.file_path.lower():
-                doc_freq[term] += 1
-
-    total_docs = max(1, len(node_trigrams))
-    scores: dict[str, float] = {}
-    best_by_term: dict[str, tuple[float, str]] = {}
-
-    for nid, tris in node_trigrams.items():
-        n = node_map[nid]
-        label_l = n.label.lower()
-        path_l = n.file_path.lower()
-        s = 0.0
-        for term in terms:
-            idf = math.log(1.0 + total_docs / (1.0 + doc_freq.get(term, 0)))
-            t_tris = _trigrams(term)
-            overlap = len(tris & t_tris) / max(1, len(t_tris))
-            exact_bonus = 2.0 if term in label_l else (1.0 if term in path_l else 0.0)
-            term_score = (exact_bonus + overlap) * idf
-            s += term_score
-            if term_score > 0:
-                prev = best_by_term.get(term)
-                if prev is None or term_score > prev[0]:
-                    best_by_term[term] = (term_score, nid)
-        if s > 0:
-            scores[nid] = s
-
-    # Per-term seed guarantee + top-8 seeds
-    seeds: list[str] = []
-    seen_seeds: set[str] = set()
-    for _, nid in sorted(best_by_term.values(), key=lambda x: (-x[0], x[1])):
-        if nid not in seen_seeds:
-            seen_seeds.add(nid)
-            seeds.append(nid)
-    for nid, _ in sorted(scores.items(), key=lambda x: (-x[1], x[0])):
-        if nid not in seen_seeds:
-            seen_seeds.add(nid)
-            seeds.append(nid)
-        if len(seeds) >= 8:
-            break
+    scores, seeds = score_graph_trigrams(
+        [n.id for n in graph.nodes],
+        [n.label for n in graph.nodes],
+        [n.file_path for n in graph.nodes],
+        [n.is_test_or_utility for n in graph.nodes],
+        terms,
+        include_tests,
+    )
+    seen_seeds: set[str] = set(seeds)
 
     # Hub-guarded BFS
     visited: set[str] = set(seeds)

@@ -113,7 +113,8 @@ athena/
 │   ├── symbol_cache.py       # Content-addressed parsed symbol cache
 │   ├── mcp_config.py         # MCP client config generator (Claude Desktop, Cursor, VS Code)
 │   ├── verifier.py           # Ground-truth evidence verifier & hallucination guard
-│   ├── security.py           # Path jail, symlink defense, NTFS ADS guard & secret redaction
+│   ├── security.py           # Path jail, symlink defense, NTFS ADS guard & Rust-accelerated secret redaction
+│   ├── _fast_kernels.py      # Plain-data hot kernels with verified Rust PyO3 fast-anything ports
 │   └── models.py             # Pydantic v2 schemas
 ├── skills/athena/SKILL.md    # Portable Athena agent protocol skill
 ├── docs/                     # CLI examples, evaluation reports, CI/Docker integrations & demo tape
@@ -146,7 +147,23 @@ Tested offline across **13 new repositories** (**3 NVIDIA 2026 & CUDA repos** ov
 | `dotnet/runtime` | C# | 18,461 | `HEAD~100` | 4,334 | 18,661 / 14,424 | 229.6s -> 11.4s | **1,978.0x** |
 | `latex3/latex2e` | TeX | 2,523 | `HEAD~1000` | 154 | 561 / 393 | 9.8s -> 0.4s | **1,527.1x** |
 
-Full version-by-version test history (`v1.0.0` -> `v1.3.1`): [docs/evaluation.md](docs/evaluation.md).
+### Hybrid Rust Acceleration (Zero Degradation)
+
+Athena keeps its Python MCP/AST architecture intact and accelerates its hottest kernels via batched Git `cat-file --batch` I/O and verified **Rust PyO3 extensions** built with [`EL4CTEO/fast-anything`](https://github.com/EL4CTEO/fast-anything), automatically falling back to pure Python when unbuilt or when `FAST_ANYTHING_DISABLE=1` is set:
+
+- **Kernel speedups (`fast-anything verify`)**: `redact_secrets` **41x** (`776/776` calls), `score_graph_trigrams` **8.8x** (`330/330` calls), `compute_community_assignments` **3.5x** (`206/206` calls), `extract_structural_symbols_raw` **1.9x** (`800/800` calls).
+- **Batched Git blob reads**: cut `athena` (`v1.0.0..v1.3.1`) breaking-change analysis from **12.74s -> 3.17s (`4.02x` faster)**.
+- **Real-world `NVIDIA/cuvs` verification** (`1,269` files, `6,152` nodes, `7,188` edges): `build_code_graph` sped up **9.63x** (`31.39s -> 3.26s`), 20 graph queries sped up **4.31x** (`7.80s -> 1.81s`), overall workflow **3.21x** (`50.85s -> 15.83s`), with identical SHA-256 `graph_evidence_id` and breaking-change findings.
+
+```bash
+# Optional: compile native Rust accelerations locally into .fast/lib/
+python scripts/build_rust_accel.py
+
+# Toggle pure-Python fallback at any time
+FAST_ANYTHING_DISABLE=1 athena graph . --query "auth"
+```
+
+Full version-by-version test history (`v1.0.0` -> `v1.3.1`) and Rust parity audit: [docs/evaluation.md](docs/evaluation.md).
 
 ---
 

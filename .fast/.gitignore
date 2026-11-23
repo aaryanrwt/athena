@@ -1,0 +1,27 @@
+# fast-anything: commit ports/*/src and Cargo.toml (your Rust ports); skip the rest
+target/
+lib/
+bin/
+backup/
+hook/
+children/
+runner.*
+recorder.*
+Describe.java
+*.txt
+job-*.json
+profile.*
+*.pprof
+verify.json
+*.jsonl
+*.meta.json
+*.log
+job-*.R
+startup.R
+bridge.R
+Rprof.out*
+*.rds
+bench_fixture/
+ports/athena._fast_kernels.parse_unified_diff_raw/
+state.json
+ports/*/TASK.md

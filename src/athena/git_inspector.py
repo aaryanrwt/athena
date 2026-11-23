@@ -9,6 +9,7 @@ import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from athena._fast_kernels import _HUNK_HEADER_RE, parse_unified_diff_raw
 from athena.models import (
     ChangedFileDelta,
     CommitSummaryItem,
@@ -60,9 +61,6 @@ MAX_SOURCE_BLOB_BYTES = 512 * 1024  # 512 KB cap for AST source inspection
 _CONVENTIONAL_HEADER_RE = re.compile(
     r"^(?P<type>[a-zA-Z]+)(?:\((?P<scope>[^)]+)\))?(?P<breaking>!)?:\s*(?P<subject>.+)$"
 )
-_HUNK_HEADER_RE = re.compile(
-    r"^@@ -(?P<base_start>\d+)(?:,(?P<base_count>\d+))? \+(?P<target_start>\d+)(?:,(?P<target_count>\d+))? @@(?P<context>.*)$"
-)
 
 
 @dataclass
@@ -105,6 +103,20 @@ def detect_working_tree_drift(extraction: RawRangeExtraction) -> list[str]:
     return drifted
 
 
+def _build_git_env() -> dict[str, str]:
+    git_env = os.environ.copy()
+    git_env.update(
+        {
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_ASKPASS": "",
+            # Static analysis must never turn a blobless clone into an implicit
+            # network operation. Missing promised objects are reported instead.
+            "GIT_NO_LAZY_FETCH": "1",
+        }
+    )
+    return git_env
+
+
 def run_git_command(
     repo_path: Path,
     args: list[str],
@@ -124,16 +136,7 @@ def run_git_command(
         "color.ui=never",
         *args,
     ]
-    git_env = os.environ.copy()
-    git_env.update(
-        {
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_ASKPASS": "",
-            # Static analysis must never turn a blobless clone into an implicit
-            # network operation. Missing promised objects are reported instead.
-            "GIT_NO_LAZY_FETCH": "1",
-        }
-    )
+    git_env = _build_git_env()
     try:
         # User-controlled revisions are validated before reaching this shell-free call.
         proc = subprocess.run(  # nosec B603
@@ -517,100 +520,133 @@ def read_blob_at_revision(repo_path: Path, rev_sha: str, file_path: str) -> str 
     return blob_proc.stdout
 
 
+def read_blobs_at_revision(
+    repo_path: Path,
+    rev_sha: str,
+    file_paths: list[str],
+    *,
+    max_bytes: int = MAX_SOURCE_BLOB_BYTES,
+) -> dict[str, str]:
+    """Batch-read multiple UTF-8 source blobs at a commit SHA using two `git cat-file` calls."""
+    unique_paths: list[str] = []
+    seen: set[str] = set()
+    for raw_path in file_paths:
+        norm = raw_path.replace("\\", "/")
+        if not norm or "\n" in norm or "\r" in norm or "\x00" in norm:
+            continue
+        if norm not in seen:
+            seen.add(norm)
+            unique_paths.append(norm)
+
+    if not unique_paths:
+        return {}
+
+    result: dict[str, str] = {}
+    if rev_sha == "WORKING_TREE":
+        for norm in unique_paths:
+            candidate = repo_path / norm
+            if not candidate.exists() or not candidate.is_file():
+                continue
+            if not is_safe_repo_file(repo_path, candidate):
+                continue
+            try:
+                if candidate.stat().st_size > max_bytes:
+                    continue
+                result[norm] = candidate.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+        return result
+
+    git_env = _build_git_env()
+    specs_bytes = "".join(f"{rev_sha}:{p}\n" for p in unique_paths).encode("utf-8")
+    try:
+        chk_proc = subprocess.run(  # nosec B603
+            ["git", "-c", "core.quotePath=false", "cat-file", "--batch-check"],
+            cwd=str(repo_path),
+            input=specs_bytes,
+            shell=False,
+            capture_output=True,
+            text=False,
+            timeout=30,
+            env=git_env,
+        )
+    except subprocess.TimeoutExpired:
+        return {}
+
+    if not chk_proc.stdout:
+        return {}
+
+    chk_lines = chk_proc.stdout.splitlines()
+    valid_paths: list[str] = []
+    for path, raw_line in zip(unique_paths, chk_lines):
+        line_str = raw_line.decode("utf-8", errors="replace").strip()
+        parts = line_str.rsplit(" ", 2)
+        if len(parts) == 3 and parts[1] == "blob" and parts[2].isdigit():
+            if int(parts[2]) <= max_bytes:
+                valid_paths.append(path)
+
+    if not valid_paths:
+        return {}
+
+    batch_input = "".join(f"{rev_sha}:{p}\n" for p in valid_paths).encode("utf-8")
+    try:
+        batch_proc = subprocess.run(  # nosec B603
+            ["git", "-c", "core.quotePath=false", "cat-file", "--batch"],
+            cwd=str(repo_path),
+            input=batch_input,
+            shell=False,
+            capture_output=True,
+            text=False,
+            timeout=30,
+            env=git_env,
+        )
+    except subprocess.TimeoutExpired:
+        return {}
+
+    raw_out = batch_proc.stdout
+    if not raw_out:
+        return {}
+
+    pos = 0
+    data_len = len(raw_out)
+    for path in valid_paths:
+        nl = raw_out.find(b"\n", pos)
+        if nl == -1:
+            break
+        header = raw_out[pos:nl].decode("utf-8", errors="replace").strip()
+        pos = nl + 1
+        parts = header.rsplit(" ", 2)
+        if len(parts) == 3 and parts[1] == "blob" and parts[2].isdigit():
+            size = int(parts[2])
+            if size <= max_bytes and pos + size <= data_len:
+                text = raw_out[pos : pos + size].decode("utf-8", errors="replace")
+                result[path] = text.replace("\r\n", "\n")
+            pos += size + 1
+        elif len(parts) >= 3 and parts[-1].isdigit():
+            size = int(parts[-1])
+            pos += size + 1
+
+    return result
+
+
 def _parse_unified_diff_by_file(diff_text: str) -> dict[str, tuple[list[ParsedHunk], int, int, bool]]:
     """Parse unified git diff output into per-file hunks, insertions, deletions, and binary flags."""
     results: dict[str, tuple[list[ParsedHunk], int, int, bool]] = {}
-    if not diff_text.strip():
-        return results
-
-    current_file: str | None = None
-    hunks: list[ParsedHunk] = []
-    current_header: str | None = None
-    current_base_span: LineSpan | None = None
-    current_target_span: LineSpan | None = None
-    current_lines: list[str] = []
-    ins_count = 0
-    del_count = 0
-    is_binary = False
-
-    def _flush_hunk() -> None:
-        nonlocal current_header, current_base_span, current_target_span, current_lines
-        if current_header is not None:
-            excerpt = redact_secrets("\n".join(current_lines))
+    for file_path, raw_hunks, ins_count, del_count, is_binary in parse_unified_diff_raw(diff_text):
+        hunks: list[ParsedHunk] = []
+        for header, b_start, b_end, t_start, t_end, raw_lines in raw_hunks:
+            excerpt = redact_secrets(raw_lines)
             if len(excerpt) > MAX_EVIDENCE_EXCERPT_CHARS:
                 excerpt = excerpt[:MAX_EVIDENCE_EXCERPT_CHARS] + "\n... [diff hunk truncated]"
             hunks.append(
                 ParsedHunk(
-                    header=current_header,
-                    base_span=current_base_span,
-                    target_span=current_target_span,
+                    header=header,
+                    base_span=LineSpan(start_line=b_start, end_line=b_end) if b_start > 0 else None,
+                    target_span=LineSpan(start_line=t_start, end_line=t_end) if t_start > 0 else None,
                     excerpt=excerpt,
                 )
             )
-        current_header = None
-        current_base_span = None
-        current_target_span = None
-        current_lines = []
-
-    def _flush_file() -> None:
-        nonlocal current_file, hunks, ins_count, del_count, is_binary
-        _flush_hunk()
-        if current_file is not None:
-            results[current_file] = (hunks, ins_count, del_count, is_binary)
-        current_file = None
-        hunks = []
-        ins_count = 0
-        del_count = 0
-        is_binary = False
-
-    for line in diff_text.splitlines():
-        if line.startswith("diff --git a/"):
-            _flush_file()
-            parts = line.split(" b/", 1)
-            if len(parts) == 2:
-                current_file = parts[1].strip()
-            continue
-
-        if current_file is None:
-            continue
-
-        if line.startswith("Binary files ") or line.startswith("GIT binary patch"):
-            is_binary = True
-            continue
-
-        if line.startswith("+++ b/"):
-            current_file = line[6:].strip()
-            continue
-
-        if line.startswith("--- ") or line.startswith("index ") or line.startswith("new file ") or line.startswith("deleted file "):
-            continue
-
-        hunk_match = _HUNK_HEADER_RE.match(line)
-        if hunk_match:
-            _flush_hunk()
-            current_header = line.strip()
-            b_start = int(hunk_match.group("base_start"))
-            b_cnt = int(hunk_match.group("base_count") or "1")
-            t_start = int(hunk_match.group("target_start"))
-            t_cnt = int(hunk_match.group("target_count") or "1")
-            if b_start > 0 and b_cnt > 0:
-                current_base_span = LineSpan(start_line=b_start, end_line=b_start + b_cnt - 1)
-            elif b_start > 0:
-                current_base_span = LineSpan(start_line=b_start, end_line=b_start)
-            if t_start > 0 and t_cnt > 0:
-                current_target_span = LineSpan(start_line=t_start, end_line=t_start + t_cnt - 1)
-            elif t_start > 0:
-                current_target_span = LineSpan(start_line=t_start, end_line=t_start)
-            continue
-
-        if current_header is not None:
-            current_lines.append(line)
-            if line.startswith("+") and not line.startswith("+++"):
-                ins_count += 1
-            elif line.startswith("-") and not line.startswith("---"):
-                del_count += 1
-
-    _flush_file()
+        results[file_path] = (hunks, ins_count, del_count, is_binary)
     return results
 
 
@@ -773,6 +809,8 @@ def extract_revision_range_data(
     changed_files: list[ChangedFileDelta] = []
     base_blobs: dict[str, str] = {}
     target_blobs: dict[str, str] = {}
+    pending_base_reads: list[tuple[str, str]] = []
+    pending_target_reads: list[str] = []
     for line in name_status_proc.stdout.splitlines():
         if not line.strip():
             continue
@@ -883,25 +921,20 @@ def extract_revision_range_data(
         if can_load_ast_blob:
             if status_lit in ("modified", "deleted", "renamed"):
                 base_lookup_path = old_path or file_path
-                b_blob = read_blob_at_revision(repo_path, base_sha, base_lookup_path)
-                if b_blob is not None:
-                    base_blobs[file_path] = b_blob
+                pending_base_reads.append((file_path, base_lookup_path))
             if status_lit in ("added", "modified", "renamed"):
-                t_blob: str | None = None
                 if target_sha == "WORKING_TREE":
                     wt_candidate = repo_path / file_path
                     if wt_candidate.exists() and wt_candidate.is_file() and is_safe_repo_file(repo_path, wt_candidate):
                         try:
                             st = wt_candidate.stat()
                             if st.st_size <= MAX_SOURCE_BLOB_BYTES:
-                                t_blob = wt_candidate.read_text(encoding="utf-8", errors="replace")
+                                target_blobs[file_path] = wt_candidate.read_text(encoding="utf-8", errors="replace")
                                 working_tree_stats[file_path] = (st.st_mtime_ns, st.st_size)
                         except OSError:
-                            t_blob = None
-                if t_blob is None and target_sha != "WORKING_TREE":
-                    t_blob = read_blob_at_revision(repo_path, target_sha, file_path)
-                if t_blob is not None:
-                    target_blobs[file_path] = t_blob
+                            pass
+                else:
+                    pending_target_reads.append(file_path)
 
         changed_files.append(
             ChangedFileDelta(
@@ -917,6 +950,24 @@ def extract_revision_range_data(
                 evidence_ids=file_ev_ids,
             )
         )
+
+    if pending_base_reads:
+        batch_base = read_blobs_at_revision(
+            repo_path,
+            base_sha,
+            [lookup for _, lookup in pending_base_reads],
+        )
+        for file_path, lookup in pending_base_reads:
+            b_blob = batch_base.get(lookup)
+            if b_blob is not None:
+                base_blobs[file_path] = b_blob
+
+    if pending_target_reads and target_sha != "WORKING_TREE":
+        batch_target = read_blobs_at_revision(repo_path, target_sha, pending_target_reads)
+        for file_path in pending_target_reads:
+            t_blob = batch_target.get(file_path)
+            if t_blob is not None:
+                target_blobs[file_path] = t_blob
 
     return RawRangeExtraction(
         repo_path=repo_path,

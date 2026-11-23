@@ -12,6 +12,7 @@ from athena.git_inspector import (
     RawRangeExtraction,
     _is_test_file,
     read_blob_at_revision,
+    read_blobs_at_revision,
     run_git_command,
 )
 from athena.models import (
@@ -1714,7 +1715,19 @@ def _scan_callers_and_tests_and_docs(
         else None
     )
 
-    for rel_path in eligible_scan_files[:max_scan_files]:
+    scan_paths = eligible_scan_files[:max_scan_files]
+    batch_target_blobs: dict[str, str] = {}
+    if target_sha != "WORKING_TREE":
+        missing_paths = [p for p in scan_paths if p not in extraction.target_blobs]
+        if missing_paths:
+            batch_target_blobs = read_blobs_at_revision(
+                repo_path,
+                target_sha,
+                missing_paths,
+                max_bytes=256 * 1024,
+            )
+
+    for rel_path in scan_paths:
         is_py = rel_path.endswith(".py")
         is_ts = rel_path.endswith(SUPPORTED_NON_PY_CODE_EXTS)
         is_md = rel_path.endswith((".md", ".rst"))
@@ -1735,7 +1748,7 @@ def _scan_callers_and_tests_and_docs(
                     except OSError:
                         content = None
             else:
-                content = read_blob_at_revision(repo_path, target_sha, rel_path)
+                content = batch_target_blobs.get(rel_path)
 
         if content is None:
             if is_py or is_ts:

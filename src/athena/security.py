@@ -313,3 +313,22 @@ def wrap_untrusted_repo_data(content: str) -> str:
     sanitized = sanitized.replace("</untrusted_repo_content>", "&lt;/untrusted_repo_content&gt;")
     sanitized = sanitized.replace("<untrusted_repo_content>", "&lt;untrusted_repo_content&gt;")
     return f"<untrusted_repo_content>\n{sanitized}\n</untrusted_repo_content>"
+
+# >>> fast-anything: athena.security.redact_secrets >>>
+# Uses the verified Rust port. FAST_ANYTHING_DISABLE=1 runs the Python above instead.
+# Undo with:  fast-anything disable athena.security.redact_secrets
+def _fast_anything_load():
+    import os, sys
+    if os.environ.get("FAST_ANYTHING_DISABLE"):
+        return None
+    lib = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../.fast/lib"))
+    if lib not in sys.path:
+        sys.path.append(lib)
+    try:
+        from fa_athena_security_redact_secrets import redact_secrets
+    except ImportError:
+        return None
+    return redact_secrets
+redact_secrets = _fast_anything_load() or redact_secrets
+del _fast_anything_load
+# <<< fast-anything: athena.security.redact_secrets <<<

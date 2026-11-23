@@ -82,3 +82,16 @@ desktop.ini
 # Private research, cloned competitor repos, and internal secrets/docs (never push)
 private/
 .athena/
+
+# Rust fast-anything transient artifacts (keep ports Cargo.toml, src/lib.rs, and state.json)
+.fast/target/
+.fast/lib/
+.fast/bench_fixture/
+.fast/ports/*/recordings.jsonl
+.fast/ports/*/verify.json
+.fast/ports/athena._fast_kernels.parse_unified_diff_raw/
+.fast/profile.json
+.fast/runner.py
+.fast/hook/
+.fast/state.json
+.fast/ports/*/TASK.md

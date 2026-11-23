@@ -11,7 +11,6 @@ import ast
 import hashlib
 import json
 import os
-import re
 import threading
 from collections import defaultdict
 from pathlib import Path
@@ -19,6 +18,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from athena._fast_kernels import (
+    _IMPORT_PATTERNS,
+    _PHP_DYNAMIC_RE,
+    _STRUCTURAL_PATTERNS,
+    _TS_JS_REEXPORT_RE,
+    compute_community_assignments,
+    extract_structural_symbols_raw,
+)
 from athena.evidence_store import (
     CompletenessStatus,
     EvidenceConfidence,
@@ -87,72 +94,6 @@ _LANG_FAMILY: dict[str, str] = {
     "tex": "tex",
 }
 
-# Non-backtracking line-anchored structural regexes (never nested quantifiers)
-_STRUCTURAL_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
-    "typescript": (
-        re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[<(]"),
-        re.compile(r"^\s*(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][A-Za-z0-9_$]*)"),
-        re.compile(r"^\s*(?:export\s+)?interface\s+([A-Za-z_$][A-Za-z0-9_$]*)"),
-        re.compile(r"^\s*(?:export\s+)?type\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*="),
-        re.compile(r"^\s*(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?\("),
-    ),
-    "javascript": (
-        re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\("),
-        re.compile(r"^\s*(?:export\s+)?class\s+([A-Za-z_$][A-Za-z0-9_$]*)"),
-        re.compile(r"^\s*(?:export\s+)?const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:async\s*)?\("),
-        re.compile(r"^\s*(?:module\.)?exports\.([A-Za-z_$][A-Za-z0-9_$]*)\s*="),
-    ),
-    "go": (
-        re.compile(r"^\s*func\s+(?:\([^)]+\)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\("),
-        re.compile(r"^\s*type\s+([A-Za-z_][A-Za-z0-9_]*)\s+(?:struct|interface)\b"),
-    ),
-    "rust": (
-        re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]"),
-        re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait)\s+([A-Za-z_][A-Za-z0-9_]*)"),
-    ),
-    "java": (
-        re.compile(r"^\s*(?:public|protected|private)?\s*(?:static\s+|final\s+|abstract\s+)*(?:class|interface|enum|record)\s+([A-Za-z_][A-Za-z0-9_]*)"),
-    ),
-    "kotlin": (
-        re.compile(r"^\s*(?:public|internal|private|protected)?\s*(?:suspend\s+)?fun\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]"),
-        re.compile(r"^\s*(?:data\s+|sealed\s+)?(?:class|interface|object)\s+([A-Za-z_][A-Za-z0-9_]*)"),
-    ),
-    "ruby": (
-        re.compile(r"^\s*def\s+(?:self\.)?([A-Za-z_][A-Za-z0-9_]*[!?=]?)"),
-        re.compile(r"^\s*(?:class|module)\s+([A-Za-z_][A-Za-z0-9_:]*)"),
-    ),
-    "php": (
-        re.compile(r"^\s*(?:public|protected|private)?\s*(?:static\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
-        re.compile(r"^\s*(?:abstract\s+|final\s+)?(?:class|interface|trait)\s+([A-Za-z_][A-Za-z0-9_]*)"),
-    ),
-    "csharp": (
-        re.compile(r"^\s*(?:public|internal|private|protected)?\s*(?:static\s+|sealed\s+|abstract\s+|partial\s+)*(?:class|interface|struct|record|enum)\s+([A-Za-z_][A-Za-z0-9_]*)"),
-    ),
-    "c": (
-        re.compile(r"^\s*(?:typedef\s+)?struct\s+([A-Za-z_][A-Za-z0-9_]*)"),
-    ),
-    "cpp": (
-        re.compile(r"^\s*(?:class|struct|namespace)\s+([A-Za-z_][A-Za-z0-9_]*)"),
-    ),
-    "cuda": (
-        re.compile(r"^\s*(?:__global__|__device__|__host__)(?:\s+(?:__device__|__host__|inline|static))*\s+[A-Za-z_][A-Za-z0-9_:<>*&\s]+\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
-        re.compile(r"^\s*(?:class|struct|namespace)\s+([A-Za-z_][A-Za-z0-9_]*)"),
-    ),
-    "tex": (
-        re.compile(r"^\s*\\(?:sub)*section\*?\{([^}]+)\}"),
-        re.compile(r"^\s*\\newcommand\*?\{\\([A-Za-z0-9_]+)\}"),
-    ),
-}
-
-_IMPORT_PATTERNS: dict[str, re.Pattern[str]] = {
-    "typescript": re.compile(r"""^\s*import\s+.*?\s+from\s+['"]([^'"]+)['"]"""),
-    "javascript": re.compile(r"""^\s*(?:import\s+.*?\s+from\s+|require\s*\(\s*)['"]([^'"]+)['"]"""),
-    "go": re.compile(r"""^\s*(?:[A-Za-z_][A-Za-z0-9_]*\s+)?["']([^"']+)["']"""),
-    "rust": re.compile(r"""^\s*use\s+([A-Za-z0-9_:]+);"""),
-}
-_TS_JS_REEXPORT_RE = re.compile(r"""^\s*export\s+(?:\*|\{[^}]+\})\s+from\s+['"]([^'"]+)['"]""")
-_PHP_DYNAMIC_RE = re.compile(r"""(?:__callStatic|__call|->\s*(?:bind|singleton)\s*\(|app\s*\(\s*\)\s*->\s*make\s*\()""")
-
 
 class GraphNode(BaseModel):
     """A symbol or file entity in the persistent Athena code knowledge graph."""
@@ -210,7 +151,7 @@ def _is_test_or_utility_path(rel_path: str, symbol: str = "") -> bool:
 
 def _should_skip_rel_path(rel_path: str) -> bool:
     norm = rel_path.replace("\\", "/").lstrip("./")
-    if not norm or norm.startswith(".athena/") or norm.startswith("private/"):
+    if not norm or norm.startswith(".athena/") or norm.startswith(".fast/") or norm.startswith("private/"):
         return True
     if Path(norm).name in LOCKFILE_AND_GENERATED_NAMES:
         return True
@@ -505,71 +446,54 @@ def _extract_structural_file_graph(
         )
     )
 
-    patterns = _STRUCTURAL_PATTERNS.get(language, ())
-    imp_pat = _IMPORT_PATTERNS.get(language)
     seen_syms: set[str] = set()
     unknowns: list[ResidualUnknownRecord] = []
 
-    for idx, line in enumerate(source.splitlines(), start=1):
-        if len(line) > 512:
-            # Skip minified lines cleanly (prevents ponytail #1443 / #1519 spikes)
-            continue
-        stripped = line.lstrip()
-        if not stripped or stripped.startswith(("//", "#", "/*", "*", "--")):
-            # Never fabricate AST/structural nodes or edges from comments (graphify #5368)
-            continue
-        if imp_pat is not None:
-            m_imp = imp_pat.match(line)
-            if m_imp:
-                call_hints.append({"source": mod_id, "target_name": m_imp.group(1), "relation": "imports", "lang": language})
-        if language in {"typescript", "javascript"}:
-            m_reexp = _TS_JS_REEXPORT_RE.match(line)
-            if m_reexp:
-                call_hints.append({"source": mod_id, "target_name": m_reexp.group(1), "relation": "imports", "lang": language})
-        if language == "php" and _PHP_DYNAMIC_RE.search(line):
-            unk_payload = {"kind": "dynamic_dispatch", "file": rel_path, "line": idx, "sym": "php_dynamic"}
-            unknowns.append(
-                ResidualUnknownRecord(
-                    unknown_id=canonical_unknown_id(unk_payload),
-                    kind="dynamic_dispatch",
-                    severity="medium",
-                    file_path=rel_path,
-                    line=idx,
-                    symbol=mod_id,
-                    detail="Dynamic PHP/Laravel magic or container binding (`__callStatic`/`__call`/`bind`/`make`) cannot be statically resolved.",
-                    remediation="Inspect service provider bindings or facade target manually.",
-                )
+    raw_symbols, import_targets, php_dynamic_lines = extract_structural_symbols_raw(language, source)
+
+    for imp_tgt in import_targets:
+        call_hints.append({"source": mod_id, "target_name": imp_tgt, "relation": "imports", "lang": language})
+
+    for idx in php_dynamic_lines:
+        unk_payload = {"kind": "dynamic_dispatch", "file": rel_path, "line": idx, "sym": "php_dynamic"}
+        unknowns.append(
+            ResidualUnknownRecord(
+                unknown_id=canonical_unknown_id(unk_payload),
+                kind="dynamic_dispatch",
+                severity="medium",
+                file_path=rel_path,
+                line=idx,
+                symbol=mod_id,
+                detail="Dynamic PHP/Laravel magic or container binding (`__callStatic`/`__call`/`bind`/`make`) cannot be statically resolved.",
+                remediation="Inspect service provider bindings or facade target manually.",
             )
-        for pat in patterns:
-            m = pat.match(line)
-            if m:
-                sym = m.group(1)
-                if sym:
-                    sym_id = f"sym:{rel_path}::{sym}" if sym not in seen_syms else f"sym:{rel_path}::{sym}@L{idx}"
-                    seen_syms.add(sym)
-                    nodes.append(
-                        GraphNode(
-                            id=sym_id,
-                            label=sym,
-                            kind="function",
-                            language=language,
-                            file_path=rel_path,
-                            line=idx,
-                            is_test_or_utility=mod_is_test or _is_test_or_utility_path(rel_path, sym),
-                            confidence="observed",
-                            evidence_id=canonical_evidence_id({"id": sym_id, "line": idx}),
-                        )
-                    )
-                    edges.append(
-                        GraphEdge(
-                            source=mod_id,
-                            target=sym_id,
-                            relation="contains",
-                            confidence="observed",
-                            evidence_id=canonical_evidence_id({"src": mod_id, "tgt": sym_id, "rel": "contains"}),
-                        )
-                    )
-                break
+        )
+
+    for sym, idx in raw_symbols:
+        sym_id = f"sym:{rel_path}::{sym}" if sym not in seen_syms else f"sym:{rel_path}::{sym}@L{idx}"
+        seen_syms.add(sym)
+        nodes.append(
+            GraphNode(
+                id=sym_id,
+                label=sym,
+                kind="function",
+                language=language,
+                file_path=rel_path,
+                line=idx,
+                is_test_or_utility=mod_is_test or _is_test_or_utility_path(rel_path, sym),
+                confidence="observed",
+                evidence_id=canonical_evidence_id({"id": sym_id, "line": idx}),
+            )
+        )
+        edges.append(
+            GraphEdge(
+                source=mod_id,
+                target=sym_id,
+                relation="contains",
+                confidence="observed",
+                evidence_id=canonical_evidence_id({"src": mod_id, "tgt": sym_id, "rel": "contains"}),
+            )
+        )
 
     return nodes, edges, call_hints, unknowns, 0
 
@@ -582,60 +506,14 @@ def _assign_deterministic_communities(
     if not nodes:
         return {}
 
-    node_ids = sorted(n.id for n in nodes)
-    node_map = {n.id: n for n in nodes}
-    adj: dict[str, list[tuple[str, float]]] = defaultdict(list)
-
-    # Canonicalize edge iteration order
-    for edge in sorted(edges, key=lambda e: (e.source, e.target, e.relation)):
-        if edge.source in node_map and edge.target in node_map and edge.source != edge.target:
-            w = edge.weight * (0.5 if edge.confidence == "inferred" else 1.0)
-            adj[edge.source].append((edge.target, w))
-            adj[edge.target].append((edge.source, w))
-
-    labels: dict[str, int] = {nid: idx for idx, nid in enumerate(node_ids)}
-    for _ in range(12):
-        changed = False
-        for nid in node_ids:
-            neighbors = adj.get(nid)
-            if not neighbors:
-                continue
-            scores: dict[int, float] = defaultdict(float)
-            for nb, w in neighbors:
-                scores[labels[nb]] += w
-            # Tie-break deterministically by smallest community ID
-            best_comm = min(scores.items(), key=lambda item: (-item[1], item[0]))[0]
-            if best_comm != labels[nid]:
-                labels[nid] = best_comm
-                changed = True
-        if not changed:
-            break
-
-    # Renumber communities deterministically by descending size, then first node ID
-    groups: dict[int, list[str]] = defaultdict(list)
-    for nid in node_ids:
-        groups[labels[nid]].append(nid)
-
-    ordered_groups = sorted(groups.values(), key=lambda g: (-len(g), g[0]))
-    final_comm: dict[str, int] = {}
-    community_labels: dict[str, str] = {}
-    degree = {nid: len(adj.get(nid, [])) for nid in node_ids}
-
-    for cid, members in enumerate(ordered_groups):
-        for nid in members:
-            final_comm[nid] = cid
-            node_map[nid].community = cid
-        # Pick hub non-test member as community label
-        hub = min(
-            members,
-            key=lambda m: (
-                1 if node_map[m].is_test_or_utility else 0,
-                -degree[m],
-                m,
-            ),
-        )
-        community_labels[str(cid)] = node_map[hub].label
-
+    final_comm, community_labels = compute_community_assignments(
+        [n.id for n in nodes],
+        [n.is_test_or_utility for n in nodes],
+        [n.label for n in nodes],
+        [(e.source, e.target, e.relation, e.weight, e.confidence) for e in edges],
+    )
+    for node in nodes:
+        node.community = final_comm.get(node.id, 0)
     return community_labels
 
 
