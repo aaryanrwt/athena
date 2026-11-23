@@ -1,74 +1,77 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="60" viewBox="0 0 900 60" role="img" aria-label="Athena Telemetry: 100% Offline 0-LLM, Python 3.12-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="62" viewBox="0 0 960 62" role="img" aria-label="Athena Telemetry: Core Engine 100% Offline 0-LLM, Hybrid Runtime Python 3.12-3.15 + Rust, MCP Protocol stdio 13 Tools, AST and Graph 14 Languages, Rust Speedup Up to 26.7x Graph">
   <defs>
-    <linearGradient id="bgLight" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#F8FAFF"/>
-      <stop offset="50%" stop-color="#EEF2FF"/>
-      <stop offset="100%" stop-color="#F8FAFF"/>
-    </linearGradient>
-
-    <linearGradient id="borderCrystalLight" x1="-100%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#C7D2FE"/>
-      <stop offset="35%" stop-color="#6366F1"/>
-      <stop offset="50%" stop-color="#A855F7"/>
-      <stop offset="65%" stop-color="#0EA5E9"/>
-      <stop offset="100%" stop-color="#C7D2FE"/>
-      <animate attributeName="x1" values="-100%;100%" dur="7s" repeatCount="indefinite"/>
-      <animate attributeName="x2" values="100%;300%" dur="7s" repeatCount="indefinite"/>
-    </linearGradient>
-
-    <linearGradient id="topSheenLight" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
-      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.9"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
-
-    <linearGradient id="speedGradLight" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#0284C7"/>
-      <stop offset="100%" stop-color="#4F46E5"/>
-    </linearGradient>
+    <clipPath id="clip1"><rect x="2" y="4" width="180" height="54" rx="18"/></clipPath>
+    <clipPath id="clip2"><rect x="194" y="4" width="204" height="54" rx="18"/></clipPath>
+    <clipPath id="clip3"><rect x="410" y="4" width="174" height="54" rx="18"/></clipPath>
+    <clipPath id="clip4"><rect x="596" y="4" width="164" height="54" rx="18"/></clipPath>
+    <clipPath id="clip5"><rect x="772" y="4" width="186" height="54" rx="18"/></clipPath>
   </defs>
 
-  <!-- Outer frosted porcelain card -->
-  <rect x="1" y="1" width="898" height="58" rx="12" fill="url(#bgLight)" stroke="url(#borderCrystalLight)" stroke-width="1.25"/>
-  <!-- Top inner specular sheen -->
-  <line x1="20" y1="2" x2="880" y2="2" stroke="url(#topSheenLight)" stroke-width="1"/>
+  <!-- Pill 1: Core Engine -->
+  <g clip-path="url(#clip1)">
+    <rect x="2" y="4" width="180" height="54" fill="#F8FAFC"/>
+    <rect x="2" y="4" width="4" height="54" fill="#7C3AED"/>
+  </g>
+  <rect x="2.5" y="4.5" width="179" height="53" rx="17.5" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+  <circle cx="29" cy="31" r="14" fill="#7C3AED" opacity="0.10"/>
+  <g transform="translate(19, 21) scale(0.84)" fill="#7C3AED">
+    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+  </g>
+  <text x="50" y="27" fill="#0F172A" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600">Core Engine</text>
+  <text x="50" y="44" fill="#475569" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="500">100% Offline · 0-LLM</text>
 
-  <!-- Celestial 4-point corner accents matching banner motif -->
-  <path d="M16 10 L17.3 13.7 L21 15 L17.3 16.3 L16 20 L14.7 16.3 L11 15 L14.7 13.7 Z" fill="#8B5CF6" opacity="0.6">
-    <animate attributeName="opacity" values="0.3;0.85;0.3" dur="4s" repeatCount="indefinite"/>
-  </path>
-  <path d="M884 40 L885.1 43.1 L888.2 44.2 L885.1 45.3 L884 48.4 L882.9 45.3 L879.8 44.2 L882.9 43.1 Z" fill="#0EA5E9" opacity="0.6">
-    <animate attributeName="opacity" values="0.85;0.3;0.85" dur="4s" repeatCount="indefinite"/>
-  </path>
+  <!-- Pill 2: Hybrid Runtime (Official Python Logo) -->
+  <g clip-path="url(#clip2)">
+    <rect x="194" y="4" width="204" height="54" fill="#F8FAFC"/>
+    <rect x="194" y="4" width="4" height="54" fill="#0284C7"/>
+  </g>
+  <rect x="194.5" y="4.5" width="203" height="53" rx="17.5" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+  <circle cx="222" cy="31" r="14" fill="#0284C7" opacity="0.10"/>
+  <g transform="translate(212, 21) scale(0.84)" fill="#2563EB">
+    <path d="M11.858 0c-.978.005-1.913.088-2.736.234C6.7.662 6.26 1.558 6.26 3.21v2.182h5.725v.727H4.111c-1.664 0-3.121 1-3.577 2.903-.526 2.181-.549 3.542 0 5.82.407 1.694 1.379 2.902 3.043 2.902h1.969v-2.616c0-1.89 1.635-3.557 3.576-3.557h5.72c1.591 0 2.862-1.31 2.862-2.91v-5.45c0-1.553-1.309-2.718-2.863-2.977A18 18 0 0 0 11.858 0M8.762 1.755c.591 0 1.074.491 1.074 1.095 0 .601-.483 1.087-1.074 1.087A1.08 1.08 0 0 1 7.688 2.85c0-.604.48-1.095 1.074-1.095m9.656 4.364v2.543c0 1.971-1.671 3.63-3.577 3.63H9.122c-1.566 0-2.862 1.34-2.862 2.91v5.452c0 1.551 1.349 2.464 2.862 2.91 1.813.532 3.55.628 5.72 0 1.44-.418 2.862-1.258 2.862-2.91V18.47h-5.719v-.727h8.582c1.664 0 2.284-1.16 2.862-2.903.598-1.793.573-3.518 0-5.819-.41-1.656-1.196-2.903-2.862-2.903zm-3.216 13.807a1.08 1.08 0 0 1 1.074 1.088c0 .604-.48 1.094-1.074 1.094-.592 0-1.075-.49-1.075-1.094 0-.601.483-1.088 1.075-1.088"/>
+  </g>
+  <text x="243" y="27" fill="#0F172A" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600">Hybrid Runtime</text>
+  <text x="243" y="44" fill="#475569" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="500">Python 3.12–3.15 + Rust</text>
 
-  <!-- Vertical dividers -->
-  <line x1="180" y1="14" x2="180" y2="46" stroke="#CBD5E1" stroke-width="1"/>
-  <line x1="375" y1="14" x2="375" y2="46" stroke="#CBD5E1" stroke-width="1"/>
-  <line x1="535" y1="14" x2="535" y2="46" stroke="#CBD5E1" stroke-width="1"/>
-  <line x1="705" y1="14" x2="705" y2="46" stroke="#CBD5E1" stroke-width="1"/>
+  <!-- Pill 3: MCP Protocol (Official MCP Logo) -->
+  <g clip-path="url(#clip3)">
+    <rect x="410" y="4" width="174" height="54" fill="#F8FAFC"/>
+    <rect x="410" y="4" width="4" height="54" fill="#9333EA"/>
+  </g>
+  <rect x="410.5" y="4.5" width="173" height="53" rx="17.5" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+  <circle cx="438" cy="31" r="14" fill="#9333EA" opacity="0.10"/>
+  <g transform="translate(428, 21) scale(0.84)" fill="#9333EA">
+    <path d="M13.85 0a4.16 4.16 0 0 0-2.95 1.217L1.456 10.66a.835.835 0 0 0 0 1.18.835.835 0 0 0 1.18 0l9.442-9.442a2.49 2.49 0 0 1 3.541 0 2.49 2.49 0 0 1 0 3.541L8.59 12.97l-.1.1a.835.835 0 0 0 0 1.18.835.835 0 0 0 1.18 0l.1-.098 7.03-7.034a2.49 2.49 0 0 1 3.542 0l.049.05a2.49 2.49 0 0 1 0 3.54l-8.54 8.54a1.96 1.96 0 0 0 0 2.755l1.753 1.753a.835.835 0 0 0 1.18 0 .835.835 0 0 0 0-1.18l-1.753-1.753a.266.266 0 0 1 0-.394l8.54-8.54a4.185 4.185 0 0 0 0-5.9l-.05-.05a4.16 4.16 0 0 0-2.95-1.218c-.2 0-.401.02-.6.048a4.17 4.17 0 0 0-1.17-3.552A4.16 4.16 0 0 0 13.85 0m0 3.333a.84.84 0 0 0-.59.245L6.275 10.56a4.186 4.186 0 0 0 0 5.902 4.186 4.186 0 0 0 5.902 0L19.16 9.48a.835.835 0 0 0 0-1.18.835.835 0 0 0-1.18 0l-6.985 6.984a2.49 2.49 0 0 1-3.54 0 2.49 2.49 0 0 1 0-3.54l6.983-6.985a.835.835 0 0 0 0-1.18.84.84 0 0 0-.59-.245"/>
+  </g>
+  <text x="459" y="27" fill="#0F172A" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600">MCP Protocol</text>
+  <text x="459" y="44" fill="#475569" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="500">stdio · 13 Tools</text>
 
-  <!-- Cell 1: Core Engine -->
-  <circle cx="46" cy="21" r="5.5" fill="#10B981" opacity="0.22">
-    <animate attributeName="r" values="3.5;6.5;3.5" dur="2.6s" repeatCount="indefinite"/>
-    <animate attributeName="opacity" values="0.4;0.08;0.4" dur="2.6s" repeatCount="indefinite"/>
-  </circle>
-  <circle cx="46" cy="21" r="2.6" fill="#10B981"/>
-  <text x="96" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">CORE ENGINE</text>
-  <text x="92" y="42" text-anchor="middle" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="600">100% Offline · 0-LLM</text>
+  <!-- Pill 4: AST & Graph (Connected AST Node Graph) -->
+  <g clip-path="url(#clip4)">
+    <rect x="596" y="4" width="164" height="54" fill="#F8FAFC"/>
+    <rect x="596" y="4" width="4" height="54" fill="#059669"/>
+  </g>
+  <rect x="596.5" y="4.5" width="163" height="53" rx="17.5" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+  <circle cx="624" cy="31" r="14" fill="#059669" opacity="0.10"/>
+  <g transform="translate(614, 21) scale(0.84)" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 7v4m0 0-5.5 4.5M12 11l5.5 4.5M8.5 17.5h7"/>
+    <circle cx="12" cy="4.5" r="2.5" fill="#059669" stroke="none"/>
+    <circle cx="5.5" cy="17.5" r="2.5" fill="#059669" stroke="none"/>
+    <circle cx="18.5" cy="17.5" r="2.5" fill="#059669" stroke="none"/>
+  </g>
+  <text x="645" y="27" fill="#0F172A" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600">AST &amp; Graph</text>
+  <text x="645" y="44" fill="#475569" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="500">14 Languages</text>
 
-  <!-- Cell 2: Hybrid Runtime -->
-  <text x="277.5" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">HYBRID RUNTIME</text>
-  <text x="277.5" y="42" text-anchor="middle" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="600">Python 3.12–3.15 + Rust</text>
-
-  <!-- Cell 3: MCP Protocol -->
-  <text x="455" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">MCP PROTOCOL</text>
-  <text x="455" y="42" text-anchor="middle" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="600">stdio · 13 Tools</text>
-
-  <!-- Cell 4: AST & Graph -->
-  <text x="620" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">AST &amp; GRAPH</text>
-  <text x="620" y="42" text-anchor="middle" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="600">14 Languages</text>
-
-  <!-- Cell 5: Rust Speedup -->
-  <text x="802.5" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">RUST SPEEDUP</text>
-  <text x="802.5" y="42" text-anchor="middle" fill="url(#speedGradLight)" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="700">Up to 26.7× Graph</text>
+  <!-- Pill 5: Rust Speedup (Official Rust Gear-R Logo) -->
+  <g clip-path="url(#clip5)">
+    <rect x="772" y="4" width="186" height="54" fill="#F8FAFC"/>
+    <rect x="772" y="4" width="4" height="54" fill="#EA580C"/>
+  </g>
+  <rect x="772.5" y="4.5" width="185" height="53" rx="17.5" fill="none" stroke="#E2E8F0" stroke-width="1"/>
+  <circle cx="800" cy="31" r="14" fill="#EA580C" opacity="0.10"/>
+  <g transform="translate(789, 20) scale(0.92)" fill="#EA580C">
+    <path d="M23.8346 11.7033l-1.0073-.6236a13.7268 13.7268 0 00-.0283-.2936l.8656-.8069a.3483.3483 0 00-.1154-.578l-1.1066-.414a8.4958 8.4958 0 00-.087-.2856l.6904-.9587a.3462.3462 0 00-.2257-.5446l-1.1663-.1894a9.3574 9.3574 0 00-.1407-.2622l.49-1.0761a.3437.3437 0 00-.0274-.3361.3486.3486 0 00-.3006-.154l-1.1845.0416a6.7444 6.7444 0 00-.1873-.2268l.2723-1.153a.3472.3472 0 00-.417-.4172l-1.1532.2724a14.0183 14.0183 0 00-.2278-.1873l.0415-1.1845a.3442.3442 0 00-.49-.328l-1.076.491c-.0872-.0476-.1742-.0952-.2623-.1407l-.1903-1.1673A.3483.3483 0 0016.256.955l-.9597.6905a8.4867 8.4867 0 00-.2855-.086l-.414-1.1066a.3483.3483 0 00-.5781-.1154l-.8069.8666a9.2936 9.2936 0 00-.2936-.0284L12.2946.1683a.3462.3462 0 00-.5892 0l-.6236 1.0073a13.7383 13.7383 0 00-.2936.0284L9.9803.3374a.3462.3462 0 00-.578.1154l-.4141 1.1065c-.0962.0274-.1903.0567-.2855.086L7.744.955a.3483.3483 0 00-.5447.2258L7.009 2.348a9.3574 9.3574 0 00-.2622.1407l-1.0762-.491a.3462.3462 0 00-.49.328l.0416 1.1845a7.9826 7.9826 0 00-.2278.1873L3.8413 3.425a.3472.3472 0 00-.4171.4171l.2713 1.1531c-.0628.075-.1255.1509-.1863.2268l-1.1845-.0415a.3462.3462 0 00-.328.49l.491 1.0761a9.167 9.167 0 00-.1407.2622l-1.1662.1894a.3483.3483 0 00-.2258.5446l.6904.9587a13.303 13.303 0 00-.087.2855l-1.1065.414a.3483.3483 0 00-.1155.5781l.8656.807a9.2936 9.2936 0 00-.0283.2935l-1.0073.6236a.3442.3442 0 000 .5892l1.0073.6236c.008.0982.0182.1964.0283.2936l-.8656.8079a.3462.3462 0 00.1155.578l1.1065.4141c.0273.0962.0567.1914.087.2855l-.6904.9587a.3452.3452 0 00.2268.5447l1.1662.1893c.0456.088.0922.1751.1408.2622l-.491 1.0762a.3462.3462 0 00.328.49l1.1834-.0415c.0618.0769.1235.1528.1873.2277l-.2713 1.1541a.3462.3462 0 00.4171.4161l1.153-.2713c.075.0638.151.1255.2279.1863l-.0415 1.1845a.3442.3442 0 00.49.327l1.0761-.49c.087.0486.1741.0951.2622.1407l.1903 1.1662a.3483.3483 0 00.5447.2268l.9587-.6904a9.299 9.299 0 00.2855.087l.414 1.1066a.3452.3452 0 00.5781.1154l.8079-.8656c.0972.0111.1954.0203.2936.0294l.6236 1.0073a.3472.3472 0 00.5892 0l.6236-1.0073c.0982-.0091.1964-.0183.2936-.0294l.8069.8656a.3483.3483 0 00.578-.1154l.4141-1.1066a8.4626 8.4626 0 00.2855-.087l.9587.6904a.3452.3452 0 00.5447-.2268l.1903-1.1662c.088-.0456.1751-.0931.2622-.1407l1.0762.49a.3472.3472 0 00.49-.327l-.0415-1.1845a6.7267 6.7267 0 00.2267-.1863l1.1531.2713a.3472.3472 0 00.4171-.416l-.2713-1.1542c.0628-.0749.1255-.1508.1863-.2278l1.1845.0415a.3442.3442 0 00.328-.49l-.49-1.076c.0475-.0872.0951-.1742.1407-.2623l1.1662-.1893a.3483.3483 0 00.2258-.5447l-.6904-.9587.087-.2855 1.1066-.414a.3462.3462 0 00.1154-.5781l-.8656-.8079c.0101-.0972.0202-.1954.0283-.2936l1.0073-.6236a.3442.3442 0 000-.5892zm-6.7413 8.3551a.7138.7138 0 01.2986-1.396.714.714 0 11-.2997 1.396zm-.3422-2.3142a.649.649 0 00-.7715.5l-.3573 1.6685c-1.1035.501-2.3285.7795-3.6193.7795a8.7368 8.7368 0 01-3.6951-.814l-.3574-1.6684a.648.648 0 00-.7714-.499l-1.473.3158a8.7216 8.7216 0 01-.7613-.898h7.1676c.081 0 .1356-.0141.1356-.088v-2.536c0-.074-.0536-.0881-.1356-.0881h-2.0966v-1.6077h2.2677c.2065 0 1.1065.0587 1.394 1.2088.0901.3533.2875 1.5044.4232 1.8729.1346.413.6833 1.2381 1.2685 1.2381h3.5716a.7492.7492 0 00.1296-.0131 8.7874 8.7874 0 01-.8119.9526zM6.8369 20.024a.714.714 0 11-.2997-1.396.714.714 0 01.2997 1.396zM4.1177 8.9972a.7137.7137 0 11-1.304.5791.7137.7137 0 011.304-.579zm-.8352 1.9813l1.5347-.6824a.65.65 0 00.33-.8585l-.3158-.7147h1.2432v5.6025H3.5669a8.7753 8.7753 0 01-.2834-3.348zm6.7343-.5437V8.7836h2.9601c.153 0 1.0792.1772 1.0792.8697 0 .575-.7107.7815-1.2948.7815zm10.7574 1.4862c0 .2187-.008.4363-.0243.651h-.9c-.09 0-.1265.0586-.1265.1477v.413c0 .973-.5487 1.1846-1.0296 1.2382-.4576.0517-.9648-.1913-1.0275-.4717-.2704-1.5186-.7198-1.8436-1.4305-2.4034.8817-.5599 1.799-1.386 1.799-2.4915 0-1.1936-.819-1.9458-1.3769-2.3153-.7825-.5163-1.6491-.6195-1.883-.6195H5.4682a8.7651 8.7651 0 014.907-2.7699l1.0974 1.151a.648.648 0 00.9182.0213l1.227-1.1743a8.7753 8.7753 0 016.0044 4.2762l-.8403 1.8982a.652.652 0 00.33.8585l1.6178.7188c.0283.2875.0425.577.0425.8717zm-9.3006-9.5993a.7128.7128 0 11.984 1.0316.7137.7137 0 01-.984-1.0316zm8.3389 6.71a.7107.7107 0 01.9395-.3625.7137.7137 0 11-.9405.3635z"/>
+  </g>
+  <text x="822" y="27" fill="#0F172A" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="600">Rust Speedup</text>
+  <text x="822" y="44" fill="#475569" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="500">Up to 26.7× Graph</text>
 </svg>
