@@ -11,9 +11,9 @@
 <p align="center">
   <a href="#before-vs-after-rust-integration">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/athena-hud-dark.svg" />
-      <source media="(prefers-color-scheme: light)" srcset="assets/athena-hud-light.svg" />
-      <img alt="Athena Telemetry: 100% Offline 0-LLM, Python 3.12-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup" src="assets/athena-hud-dark.svg" width="100%" />
+      <source media="(prefers-color-scheme: dark)" srcset="assets/athena-pills-dark.svg" />
+      <source media="(prefers-color-scheme: light)" srcset="assets/athena-pills-light.svg" />
+      <img alt="Athena Telemetry: 100% Offline 0-LLM, Python 3.12-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup" src="assets/athena-pills-dark.svg" width="100%" />
     </picture>
   </a>
 </p>
