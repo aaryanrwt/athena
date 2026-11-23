@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="60" viewBox="0 0 900 60" role="img" aria-label="Athena Telemetry: 100% Offline 0-LLM, Python 3.12-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup">
+  <defs>
+    <linearGradient id="bgLight" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#F8FAFF"/>
+      <stop offset="50%" stop-color="#EEF2FF"/>
+      <stop offset="100%" stop-color="#F8FAFF"/>
+    </linearGradient>
+
+    <linearGradient id="borderCrystalLight" x1="-100%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#C7D2FE"/>
+      <stop offset="35%" stop-color="#6366F1"/>
+      <stop offset="50%" stop-color="#A855F7"/>
+      <stop offset="65%" stop-color="#0EA5E9"/>
+      <stop offset="100%" stop-color="#C7D2FE"/>
+      <animate attributeName="x1" values="-100%;100%" dur="7s" repeatCount="indefinite"/>
+      <animate attributeName="x2" values="100%;300%" dur="7s" repeatCount="indefinite"/>
+    </linearGradient>
+
+    <linearGradient id="topSheenLight" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <linearGradient id="speedGradLight" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer frosted porcelain card -->
+  <rect x="1" y="1" width="898" height="58" rx="12" fill="url(#bgLight)" stroke="url(#borderCrystalLight)" stroke-width="1.25"/>
+  <!-- Top inner specular sheen -->
+  <line x1="20" y1="2" x2="880" y2="2" stroke="url(#topSheenLight)" stroke-width="1"/>
+
+  <!-- Celestial 4-point corner accents matching banner motif -->
+  <path d="M16 10 L17.3 13.7 L21 15 L17.3 16.3 L16 20 L14.7 16.3 L11 15 L14.7 13.7 Z" fill="#8B5CF6" opacity="0.6">
+    <animate attributeName="opacity" values="0.3;0.85;0.3" dur="4s" repeatCount="indefinite"/>
+  </path>
+  <path d="M884 40 L885.1 43.1 L888.2 44.2 L885.1 45.3 L884 48.4 L882.9 45.3 L879.8 44.2 L882.9 43.1 Z" fill="#0EA5E9" opacity="0.6">
+    <animate attributeName="opacity" values="0.85;0.3;0.85" dur="4s" repeatCount="indefinite"/>
+  </path>
+
+  <!-- Vertical dividers -->
+  <line x1="180" y1="14" x2="180" y2="46" stroke="#CBD5E1" stroke-width="1"/>
+  <line x1="375" y1="14" x2="375" y2="46" stroke="#CBD5E1" stroke-width="1"/>
+  <line x1="535" y1="14" x2="535" y2="46" stroke="#CBD5E1" stroke-width="1"/>
+  <line x1="705" y1="14" x2="705" y2="46" stroke="#CBD5E1" stroke-width="1"/>
+
+  <!-- Cell 1: Core Engine -->
+  <circle cx="46" cy="21" r="5.5" fill="#10B981" opacity="0.22">
+    <animate attributeName="r" values="3.5;6.5;3.5" dur="2.6s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.4;0.08;0.4" dur="2.6s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="46" cy="21" r="2.6" fill="#10B981"/>
+  <text x="96" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">CORE ENGINE</text>
+  <text x="92" y="42" text-anchor="middle" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="600">100% Offline · 0-LLM</text>
+
+  <!-- Cell 2: Hybrid Runtime -->
+  <text x="277.5" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">HYBRID RUNTIME</text>
+  <text x="277.5" y="42" text-anchor="middle" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="600">Python 3.12–3.15 + Rust</text>
+
+  <!-- Cell 3: MCP Protocol -->
+  <text x="455" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">MCP PROTOCOL</text>
+  <text x="455" y="42" text-anchor="middle" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="600">stdio · 13 Tools</text>
+
+  <!-- Cell 4: AST & Graph -->
+  <text x="620" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">AST &amp; GRAPH</text>
+  <text x="620" y="42" text-anchor="middle" fill="#0F172A" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="600">14 Languages</text>
+
+  <!-- Cell 5: Rust Speedup -->
+  <text x="802.5" y="24" text-anchor="middle" fill="#4F46E5" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.4">RUST SPEEDUP</text>
+  <text x="802.5" y="42" text-anchor="middle" fill="url(#speedGradLight)" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="12" font-weight="700">Up to 26.7× Graph</text>
+</svg>

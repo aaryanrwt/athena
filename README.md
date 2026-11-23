@@ -2,19 +2,32 @@
   <img src="assets/banner.png" alt="Athena: Local-First Git & AST Intelligence" width="100%" />
 </p>
 
-# Athena (`athena-mcp`)
+<h1 align="center">Athena (<code>athena-mcp</code>)</h1>
 
-> **Your git diff says it is safe. Athena checks the callers.**
+<p align="center">
+  <em>Your git diff says it is safe. Athena checks the callers.</em>
+</p>
 
-[![CI](https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml/badge.svg)](https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml)
-[![Release](https://img.shields.io/badge/release-v1.3.1-D97757)](https://github.com/aaryanrwt/athena/releases/tag/v1.3.1)
-[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](https://www.python.org/)
-[![MCP](https://img.shields.io/badge/MCP-stdio%20%7C%2013%20tools-6E56CF)](https://modelcontextprotocol.io/)
-[![Offline First](https://img.shields.io/badge/core-100%25%20offline%20%7C%200--LLM%20default-2EA043)](#how-it-works)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/aaryanrwt/athena?style=flat&color=yellow)](https://github.com/aaryanrwt/athena/stargazers)
-[![M8ven Score](https://m8ven.ai/badge/mcp/aaryanrwt/athena)](https://m8ven.ai/mcp/aaryanrwt/athena?s=readme)
-[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/aaryanrwt/badge.svg)](https://hub.xerj.org/contributors/aaryanrwt)
+<p align="center">
+  <a href="#before-vs-after-rust-integration">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/athena-hud-dark.svg" />
+      <source media="(prefers-color-scheme: light)" srcset="assets/athena-hud-light.svg" />
+      <img alt="Athena Telemetry: 100% Offline 0-LLM, Python 3.12-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup" src="assets/athena-hud-dark.svg" width="880" />
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/aaryanrwt/athena/athena-audit.yml?branch=main&style=flat-square&logo=githubactions&logoColor=E0E7FF&label=CI&labelColor=111426&color=34D399" /></a>
+  <a href="https://github.com/aaryanrwt/athena/releases/tag/v1.3.1"><img alt="Release" src="https://img.shields.io/github/v/tag/aaryanrwt/athena?style=flat-square&logo=github&logoColor=E0E7FF&label=release&labelColor=111426&color=818CF8" /></a>
+  <a href="https://github.com/aaryanrwt/athena/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/aaryanrwt/athena?style=flat-square&logo=github&logoColor=E0E7FF&label=stars&labelColor=111426&color=A855F7" /></a>
+  <a href="https://github.com/aaryanrwt/athena/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/aaryanrwt/athena?style=flat-square&logo=git&logoColor=E0E7FF&label=activity&labelColor=111426&color=38BDF8" /></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/aaryanrwt/athena?style=flat-square&label=license&labelColor=111426&color=6366F1" /></a>
+  <br />
+  <a href="https://m8ven.ai/mcp/aaryanrwt/athena?s=readme"><img alt="M8ven Score" src="https://m8ven.ai/badge/mcp/aaryanrwt/athena" height="20" /></a>
+  <a href="https://hub.xerj.org/contributors/aaryanrwt"><img alt="XERJ Corpus Hub contributor" src="https://hub.xerj.org/contributors/aaryanrwt/badge.svg" height="20" /></a>
+</p>
 
 Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP server). It runs offline on your machine—no cloud APIs or vector databases required—to help both developers and AI coding agents:
 
