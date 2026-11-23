@@ -6,6 +6,7 @@ The following versions of **Athena (`athena-mcp`)** are currently supported with
 
 | Version | Supported          |
 | ------- | ------------------ |
+| `1.3.x` | :white_check_mark: |
 | `1.2.x` | :white_check_mark: |
 | `1.1.x` | :white_check_mark: |
 | `1.0.x` | :white_check_mark: |
@@ -19,7 +20,7 @@ Athena is designed as a **local-first** MCP server and CLI. Analysis tools are r
 
 - **Path Jail & Symlink Escape Defense (`src/athena/security.py`)**: All repository paths and file inspections are canonicalized and confined to the target Git workspace.
 - **Git CLI Flag Injection Defense**: Revision references (`base_ref`, `target_ref`) beginning with `-` or containing unsafe control characters are rejected before invoking `git` subprocesses (`shell=False`).
-- **Secret & Token Redaction**: Diff excerpts and commit metadata are automatically scrubbed for API keys, Bearer tokens, private keys, and credentials prior to MCP serialization or optional local Ollama prompts.
+- **Secret & Token Redaction**: Diff excerpts and commit metadata are automatically scrubbed for API keys, Bearer tokens, private keys, and high-entropy credentials prior to MCP serialization or optional local Ollama prompts (with verified Rust-vs-Python parity via `tests/test_rust_parity.py`).
 - **No Implicit Git Network Calls**: Git analysis disables lazy object fetching, interactive credential prompts, external diff drivers, and text-conversion helpers. Optional Ollama analysis contacts only the explicitly configured Ollama URL when enabled.
 - **Revision Isolation**: Committed targets are read from their resolved Git object IDs. Filesystem content is used only for an explicit `WORKING_TREE` target.
 - **Complete Output Redaction**: Serialized reports and generated Markdown are recursively redacted, including AST-derived signatures and caller snippets.

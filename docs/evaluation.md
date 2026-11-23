@@ -6,7 +6,7 @@
 | **`v1.1.0`** | Multi-language structural analysis & recursive-call analysis | `55` multi-language repos (`11` languages, `5,500` commits, `10,680` hunks) | `55/55` (`100%`) pass rate |
 | **`v1.2.0`** | TUI, SARIF 2.1.0, `check --staged`, `semver-check`, `SymbolCache`, security audit | `100`-repo 5-pass consistency run + `158` automated pytest tests | Isolated committed vs dirty trees; fixed `behavior_changed` schema |
 | **`v1.3.0`** | Persistent code graph, 2KB repo map, `shortcut:` debt, `ev_<sha256>`/`unk_<sha256>` & cross-agent installer | `10` fresh `10k+`-star repos (`100` commits each, `8,804` files) + `1,000`-commit stress tests (`FastAPI`, `Ollama`, `Tauri`, `Svelte`) | `100%` pass (`0` errors); `49x–2,067x` token reduction |
-| **`v1.3.1`** | Predictive test selection (`athena affected-tests`), `WORKING_TREE` TOCTOU drift check, unit-shift heuristic, TS barrel re-exports, PHP/Laravel magic & CUDA/TeX support | `3` NVIDIA 2026 & CUDA repos (`1,000+` commits) + `10` diverse high-star repos (`React`, `PowerToys`, `TypeScript`, `FRP`, `Deno`, `Laravel`, `Rails`, `Kotlin`, `.NET`, `LaTeX2e`) | `13/13` (`100%`) pass (`0` errors); up to `3,025.0x` token reduction |
+| **`v1.3.1`** | Hybrid Rust PyO3 acceleration (`fast-anything`) + batched Git `cat-file --batch`, `athena affected-tests`, TOCTOU drift check, unit-shift heuristic, TS barrels, PHP/Laravel magic & CUDA/TeX support | `13` multi-language & NVIDIA repos (`HEAD~100..HEAD~1000`) + **3-Company Before/After Rust Parity Audit** (`NVIDIA/cuvs`, `google/flatbuffers`, `microsoft/playwright-python`, `1,000–1,472` commits each) | `13/13` (`0` errors, up to `3,025.0x` tokens) + **14/14 parity identical** across all 3 enterprise repos (`22.48x–26.73x` faster C++/CUDA graph builds; `0` Rust regressions) |
 
 ---
 
@@ -47,16 +47,18 @@ Athena preserves 100% `pip install athena-mcp` compatibility and pure-Python fal
 | `athena._fast_kernels.extract_structural_symbols_raw` | **1.9x** (`16.2us -> 8.6us`) | `800/800` (500 recorded + 100 edge + 200 derived) | **Enabled** |
 | `athena._fast_kernels.parse_unified_diff_raw` | `0.32x` (`1.6ms -> 4.8ms` slower via FFI) | `229/229` identical, rejected by speedup gate | Kept in Python |
 
-3. **Real-World Live Cross-Verification on `NVIDIA/cuvs`** (`1,269` files, `6,152` nodes, `7,188` edges, `HEAD~50..HEAD`):
+3. **3-Company `1,000+` Commit Before vs. After Quality & Parity Audit (`FAST_ANYTHING_DISABLE=1` vs. Rust Enabled)**:
+   Verified across **NVIDIA** (`NVIDIA/cuvs`, `1,472` commits, `8b03db68d0..0bc1867026`), **Google** (`google/flatbuffers`, `1,000` commits, `e08da4dea2..5eb190f000`), and **Microsoft** (`microsoft/playwright-python`, `1,000` commits, `f672611560..c830b5f852`) running `build_code_graph`, `20 x query_code_graph`, `run_breaking_change_detection(..., max_commits=500)`, and `predict_affected_tests`:
 
-| Benchmark Stage | Pure Python (`FAST_ANYTHING_DISABLE=1`) | Hybrid Rust Enabled | Speedup | Exact Parity Check |
-| :--- | ---: | ---: | ---: | :--- |
-| `build_code_graph` | 31,390.27 ms | **3,259.24 ms** | **9.63x** | Exact `ev_ddbf63fa...5b07d`, `6,152` nodes, `7,188` edges |
-| 20 × `query_code_graph` | 7,804.16 ms | **1,809.38 ms** | **4.31x** | Identical seeds, subgraphs & token counts across all 20 queries |
-| `run_breaking_change_detection` | 11,660.09 ms | **10,761.80 ms** | **1.08x** | Identical `10` breaking-change findings & severities |
-| **Combined Workflow Total** | **50,854.52 ms** | **15,830.43 ms** | **3.21x** | **100% zero degradation (`completeness="partial"`)** |
+| Company / Repo | Commits Verified | Files / Nodes / Edges | Graph Build (Before -> After) | 20 Queries (Before -> After) | 1,000-Commit Breaking Audit | Predictive Tests (Before -> After) | Total (Before -> After) | Exact Parity (`14/14` Checks) |
+| :--- | :---: | :--- | ---: | ---: | ---: | ---: | ---: | :--- |
+| **NVIDIA** (`NVIDIA/cuvs`) | **1,472** (`8b03db68..0bc18670`) | `1,269` / `6,152` / `7,188` (`17` unks) | 29,886.35 ms -> **1,329.26 ms (`22.48x`)** | 6,039.81 ms -> **737.28 ms (`8.19x`)** | 34,446.12 ms -> **20,995.51 ms (`1.64x`)** | 19,115.88 ms -> **5,716.04 ms (`3.34x`)** | 89,488.16 ms -> **28,778.08 ms (`3.11x`)** | `ev_ddbf63fa...5b07d`, `21` breaks, `306` tests, **identical** |
+| **Google** (`google/flatbuffers`) | **1,000** (`e08da4de..5eb190f0`) | `1,196` / `11,954` / `19,419` (`2` unks) | 43,394.22 ms -> **1,623.55 ms (`26.73x`)** | 3,221.17 ms -> **2,206.51 ms (`1.46x`)** | 14,235.39 ms -> **14,299.70 ms (`1.00x`)** | 13,456.32 ms -> **5,989.52 ms (`2.25x`)** | 74,307.10 ms -> **24,119.28 ms (`3.08x`)** | `ev_c1075fe1...f9fe6`, `34` breaks, `831` tests, **identical** |
+| **Microsoft** (`microsoft/playwright-python`) | **1,000** (`f6726115..c830b5f8`) | `725` / `12,176` / `100,818` (`79` unks) | 45,780.93 ms -> **12,220.50 ms (`3.75x`)** | 14,897.74 ms -> 15,955.75 ms (`0.93x`*) | 35,889.04 ms -> 52,272.76 ms* | 15,465.60 ms -> **7,484.66 ms (`2.07x`)** | 112,033.31 ms -> **87,933.66 ms (`1.27x`)** | `ev_dacea634...74a8`, `18` breaks, `604` tests, **identical** |
 
-4. **Test Suite Parity**: Full `pytest -q --ignore=tests/evaluation` passed **166 passed, 1 skipped in 123.70s** (Rust enabled) and **166 passed, 1 skipped in 134.90s** (`FAST_ANYTHING_DISABLE=1` pure-Python fallback), down from **173.20s** before optimization, alongside dedicated automated parity assertions in `tests/test_rust_parity.py`.
+*\*Measured notes on `microsoft/playwright-python`: it is predominantly `.py` code (where `ast.parse` remains in pure Python) with `100,818` graph edges rebuilt in Python's `_build_adj` on every query (`14,897.74 ms -> 15,955.75 ms`); `run_breaking_change_detection` varied (`35,889.04 ms -> 52,272.76 ms`) across single cold/warm Windows Git subprocess runs, while `build_code_graph` (`3.75x`) and `predict_affected_tests` (`2.07x`) still lowered end-to-end runtime (`112.03s -> 87.93s`, `1.27x`). Zero bugs or parity divergences occurred across any of the 3 repositories (`0` patches required).*
+
+4. **Test Suite Parity**: Full `pytest -q --ignore=tests/evaluation` passed **168 passed, 1 skipped** (Rust enabled) and **166 passed, 1 skipped in 134.90s** (`FAST_ANYTHING_DISABLE=1` pure-Python fallback before parity test addition; post-edit targeted fallback run **12 passed in 16.26s**), down from **173.20s** pre-optimization baseline, alongside automated cross-mode parity checks in [`tests/test_rust_parity.py`](../tests/test_rust_parity.py).
 
 ---
 

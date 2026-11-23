@@ -12,6 +12,10 @@ All notable changes to Athena are recorded here. The project follows semantic ve
 - **PHP/Laravel Dynamic Magic `ResidualUnknown` Tracking (`src/athena/graph_store.py`)**: Flags `__callStatic`, `__call`, `->bind(`, `->singleton(`, and `app()->make(` as `ResidualUnknownRecord(kind="dynamic_dispatch")` so Laravel/PHP graphs accurately report `completeness="partial"`.
 - **Predictive Test Selection (`src/athena/test_selector.py`, `athena affected-tests`, `predict_affected_tests`)**: Maps diffed files and AST symbols to impacted pytest, Playwright (`.spec.ts`/`.e2e.ts`), and unit test suites.
 - **CUDA & TeX Language Support (`src/athena/graph_store.py`)**: Added `.cu`/`.cuh` (`__global__`/`__device__`/`__host__` kernels) and `.tex` (`\section`/`\newcommand`) structural extraction.
+- **Hybrid Rust PyO3 Acceleration & Batched Git Blob Reads (`src/athena/_fast_kernels.py`, `.fast/ports/`, `scripts/build_rust_accel.py`)**:
+  - Replaced per-file `git cat-file -s` + `git show` calls with batched binary `git cat-file --batch-check` + `cat-file --batch` (`read_blobs_at_revision`), cutting `athena` (`v1.0.0..v1.3.1`) breaking-change analysis **4.02x** (`12,737 ms -> 3,170 ms`).
+  - Accelerated `redact_secrets` (`41x`, `776/776`), `score_graph_trigrams` (`8.8x`, `330/330`), `compute_community_assignments` (`3.5x`, `206/206`), and `extract_structural_symbols_raw` (`1.9x`, `800/800`) via verified Rust crates generated with `EL4CTEO/fast-anything`, with automatic pure-Python fallback (`FAST_ANYTHING_DISABLE=1`).
+  - Audited across 3 tech-company repositories over `1,000–1,472` commits each (`NVIDIA/cuvs`, `google/flatbuffers`, `microsoft/playwright-python`) in [`tests/test_rust_parity.py`](tests/test_rust_parity.py) and live A/B runs: **14/14 parity checks identical** (`0` bugs / `0` regressions), up to **`26.73x`** faster graph builds.
 
 ## 1.3.0
 

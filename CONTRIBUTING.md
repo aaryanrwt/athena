@@ -9,8 +9,9 @@ Whether you are reporting an AST edge case, improving caller blast-radius precis
 ## Development Setup
 
 ### Prerequisites
-- **Python**: `>= 3.12` (verified on Python `3.12`, `3.13`, and `3.14`)
+- **Python**: `>= 3.12` (verified on Python `3.12`, `3.13`, `3.14`, and `3.15`)
 - **Git**: `>= 2.30`
+- *(Optional)* **Rust / Cargo** (`rustc` / `cargo`): to build local PyO3 accelerations (`python scripts/build_rust_accel.py`); pure-Python fallback runs automatically without Rust.
 - *(Optional)* **Ollama**: Local Ollama server at `http://127.0.0.1:11434` (`gemma:latest` / `gemma:7b` or `qwen2.5-coder:7b`) for Mode B tests.
 
 ### Clone & Install
@@ -38,6 +39,10 @@ Always run the deterministic test suite before opening a Pull Request:
 ```bash
 # Run the default offline unit, protocol, and real-world AST/Git suite
 python -m pytest -v -m "not ollama"
+
+# Cross-verify Rust extensions against pure-Python fallback
+pytest tests/test_rust_parity.py -q
+FAST_ANYTHING_DISABLE=1 pytest tests/test_rust_parity.py -q
 
 # Opt in to the live local Ollama integration test
 # Linux/macOS: ATHENA_RUN_OLLAMA_TESTS=1 python -m pytest -v -m ollama

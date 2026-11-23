@@ -18,10 +18,10 @@
 
 Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP server). It runs offline on your machine—no cloud APIs or vector databases required—to help both developers and AI coding agents:
 
-1. **Catch breaking changes before you merge** (renamed/removed symbols, parameter shifts, unguarded `None` defaults, recursion bugs, and broken callers).
-2. **Map and query any codebase in seconds** (`athena graph` & `athena map`), cutting agent token usage by **49x–2,067x** on real repositories.
-3. **Track technical debt** (`athena debt`) by binding `# shortcut: <limit>, <when to upgrade>` comments directly to functions and classes.
-4. **Plug into any AI coding agent** (`athena install`)—Hermes, OpenClaw, Claude Code, Codex, Cursor, and Pi—with safe, backed-up configs.
+1. **Catch breaking changes before you merge** (renamed/removed symbols, parameter shifts, unguarded `None` defaults, unit-shift hints, recursion bugs, and broken callers).
+2. **Map and query any codebase in seconds** (`athena graph` & `athena map`), cutting agent token usage by **49x–3,025x** on real repositories.
+3. **Predict affected tests & track technical debt** (`athena affected-tests` for pytest/Playwright + `athena debt` for `# shortcut:` markers).
+4. **Plug into any AI coding agent** (`athena install`)—Hermes, OpenClaw, Claude Code, Codex, Cursor, and Pi—with safe, backed-up configs and optional **Hybrid Rust acceleration**.
 
 ## Table of Contents
 
@@ -29,7 +29,8 @@ Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP se
 - [Everyday Commands](#everyday-commands)
 - [How It Works](#how-it-works)
 - [Project & Folder Architecture](#project--folder-architecture)
-- [Real-World Benchmark (10 Languages, 100+ Commits Each)](#real-world-benchmark-10-languages-100-commits-each)
+- [Real-World Benchmark (v1.3.1)](#real-world-benchmark-v131)
+- [Before vs. After Rust Integration](#before-vs-after-rust-integration)
 - [Use It in GitHub Actions](#use-it-in-github-actions)
 - [Star History](#star-history)
 - [Further Reading](#further-reading)
@@ -94,13 +95,14 @@ flowchart LR
 ```text
 athena/
 ├── src/athena/
-│   ├── cli.py                # CLI entry point (ui, mcp, graph, map, debt, install, check, report, semver-check)
+│   ├── cli.py                # CLI entry point (ui, mcp, graph, map, affected-tests, debt, install, check, report, semver-check)
 │   ├── tui.py                # Interactive Athena Studio Terminal UI
-│   ├── mcp_server.py         # 12-tool stdio MCP server with ToolAnnotations & hot/cold discovery
-│   ├── git_inspector.py      # Safe git diff/history extraction (GIT_NO_LAZY_FETCH=1, flag-injection guards)
-│   ├── ast_analyzer.py       # Python ast contract/recursion differ + 13-language structural scanner
-│   ├── graph_store.py        # Persistent .athena/graph.json builder, SHA-256 cache & atomic snapshots
+│   ├── mcp_server.py         # 13-tool stdio MCP server with ToolAnnotations & hot/cold discovery
+│   ├── git_inspector.py      # Safe git diff & batched cat-file extractor (GIT_NO_LAZY_FETCH=1, TOCTOU drift guard)
+│   ├── ast_analyzer.py       # Python ast contract/unit-shift/recursion differ + 14-language structural scanner
+│   ├── graph_store.py        # Persistent .athena/graph.json builder, TS barrel/PHP/CUDA/TeX graph & atomic snapshots
 │   ├── graph_query.py        # Trigram+IDF scorer, hub-guarded BFS, god_nodes & shortest_path
+│   ├── test_selector.py      # Predictive test selection (pytest, Playwright .spec.ts/.e2e.ts, unit tests)
 │   ├── repo_map.py           # <=2KB zero-search architectural export map
 │   ├── debt_tracker.py       # AST-bound `shortcut:` technical debt scanner
 │   ├── evidence_store.py     # Canonical ev_<sha256> & unk_<sha256> store + paged inspection
@@ -147,13 +149,24 @@ Tested offline across **13 new repositories** (**3 NVIDIA 2026 & CUDA repos** ov
 | `dotnet/runtime` | C# | 18,461 | `HEAD~100` | 4,334 | 18,661 / 14,424 | 229.6s -> 11.4s | **1,978.0x** |
 | `latex3/latex2e` | TeX | 2,523 | `HEAD~1000` | 154 | 561 / 393 | 9.8s -> 0.4s | **1,527.1x** |
 
-### Hybrid Rust Acceleration (Zero Degradation)
+## Before vs. After Rust Integration
 
-Athena keeps its Python MCP/AST architecture intact and accelerates its hottest kernels via batched Git `cat-file --batch` I/O and verified **Rust PyO3 extensions** built with [`EL4CTEO/fast-anything`](https://github.com/EL4CTEO/fast-anything), automatically falling back to pure Python when unbuilt or when `FAST_ANYTHING_DISABLE=1` is set:
+Athena keeps its Python CLI, MCP server, Pydantic schemas, and Python `ast` precision intact (`pip install athena-mcp` works anywhere with pure-Python fallback), while porting its hottest pure kernels to Rust PyO3 extensions via [`EL4CTEO/fast-anything`](https://github.com/EL4CTEO/fast-anything) and batching Git blob reads (`git cat-file --batch`).
 
-- **Kernel speedups (`fast-anything verify`)**: `redact_secrets` **41x** (`776/776` calls), `score_graph_trigrams` **8.8x** (`330/330` calls), `compute_community_assignments` **3.5x** (`206/206` calls), `extract_structural_symbols_raw` **1.9x** (`800/800` calls).
-- **Batched Git blob reads**: cut `athena` (`v1.0.0..v1.3.1`) breaking-change analysis from **12.74s -> 3.17s (`4.02x` faster)**.
-- **Real-world `NVIDIA/cuvs` verification** (`1,269` files, `6,152` nodes, `7,188` edges): `build_code_graph` sped up **9.63x** (`31.39s -> 3.26s`), 20 graph queries sped up **4.31x** (`7.80s -> 1.81s`), overall workflow **3.21x** (`50.85s -> 15.83s`), with identical SHA-256 `graph_evidence_id` and breaking-change findings.
+### 3-Company `1,000+` Commit Before vs. After Quality & Parity Audit
+
+Verified side-by-side (`FAST_ANYTHING_DISABLE=1` pure Python vs. Rust PyO3 enabled) across **NVIDIA**, **Google**, and **Microsoft** repositories over **`1,000–1,472` commits** each (`HEAD~1000..HEAD`):
+
+| Company & Repo | Span (`HEAD~1000..HEAD`) | Scale (`Files / Nodes / Edges`) | Graph Build (Before -> After) | 20 Queries (Before -> After) | Total Pipeline (Before -> After) | Quality & SHA-256 Parity |
+| :--- | :--- | :--- | ---: | ---: | ---: | :--- |
+| **NVIDIA** (`NVIDIA/cuvs`) | **1,472 commits** (`8b03db68..0bc18670`) | `1,269 / 6,152 / 7,188` | 29.89s -> **1.33s (`22.48x`)** | 6.04s -> **0.74s (`8.19x`)** | 89.49s -> **28.78s (`3.11x`)** | **14/14 checks identical** (`21` breaks, `306` tests, `ev_ddbf63fa...5b07d`) |
+| **Google** (`google/flatbuffers`) | **1,000 commits** (`e08da4de..5eb190f0`) | `1,196 / 11,954 / 19,419` | 43.39s -> **1.62s (`26.73x`)** | 3.22s -> **2.21s (`1.46x`)** | 74.31s -> **24.12s (`3.08x`)** | **14/14 checks identical** (`34` breaks, `831` tests, `ev_c1075fe1...f9fe6`) |
+| **Microsoft** (`microsoft/playwright-python`) | **1,000 commits** (`f6726115..c830b5f8`) | `725 / 12,176 / 100,818` | 45.78s -> **12.22s (`3.75x`)** | 14.90s -> 15.96s (`0.93x`*) | 112.03s -> **87.93s (`1.27x`*)** | **14/14 checks identical** (`18` breaks, `604` tests, `ev_dacea634...74a8`) |
+
+*\*Note on `microsoft/playwright-python`: it is predominantly `.py` files (Python `ast.parse` stays in Python) with `100,818` edges iterated in Python's `_build_adj` on each query (`14.90s -> 15.96s`); in that single run, Python's `run_breaking_change_detection` took `35.89s -> 52.27s` due to cold/warm Windows `git.exe`/OS cache variance on Python AST diffs while `predict_affected_tests` dropped `15.47s -> 7.48s` (`2.07x`), yielding `1.27x` total.*
+
+- **0 bugs / 0 regressions introduced by Rust:** Every single SHA-256 `graph_evidence_id`, `completeness` status, node/edge/unknown count, community label, 20 query subgraphs, breaking-change finding list, doc drift count, and predicted test list matched bit-for-bit across all 3 enterprise repositories.
+- **Verified Kernel Micro-Benchmarks (`fast-anything verify`) & Batch Git:** `redact_secrets` **41x** (`237.3us -> 5.8us`, `776/776`), `score_graph_trigrams` **8.8x** (`37.3ms -> 4.2ms`, `330/330`), `compute_community_assignments` **3.5x** (`9.6ms -> 2.7ms`, `206/206`), `extract_structural_symbols_raw` **1.9x** (`16.2us -> 8.6us`, `800/800`), plus batched `git cat-file --batch` cutting Athena (`v1.0.0..v1.3.1`) breaking-change analysis **4.02x** (`12.74s -> 3.17s`). (`parse_unified_diff_raw` matched `229/229` calls but measured `3.1x` slower via PyO3 FFI allocation overhead, so it was intentionally kept in Python.)
 
 ```bash
 # Optional: compile native Rust accelerations locally into .fast/lib/

@@ -319,3 +319,52 @@ athena --cache-dir .athena-cache breaking-changes . --base main --target HEAD
 ```
 
 Enables opt-in SHA-256 content-hash caching for parsed symbols across large repositories. Can also be enabled globally via the `ATHENA_CACHE_DIR` environment variable.
+
+### 12. Zero-Search Repo Map (`v1.3.0+`)
+
+```bash
+athena map .
+```
+
+Prints a `<=2000`-character architectural map of public modules and exports without running agent grep loops.
+
+### 13. Persistent Code Knowledge Graph & Queries (`v1.3.0+`)
+
+```bash
+athena graph . --query "breaking change ast"
+```
+
+Builds/queries `.athena/graph.json` with trigram+IDF scoring, hub-guarded BFS, deterministic community clusters, and CUDA/TeX/TS-barrel/PHP unknown tracking.
+
+### 14. Predictive Test Selection (`v1.3.1+`)
+
+```bash
+athena affected-tests . --base main --target HEAD
+```
+
+Maps changed symbols and callers directly to impacted `pytest`, Playwright (`.spec.ts`/`.e2e.ts`), and unit test files.
+
+### 15. Technical Debt Ledger (`v1.3.0+`)
+
+```bash
+athena debt .
+```
+
+Finds `# shortcut: <limit>, <when to upgrade>` markers bound to enclosing AST symbols.
+
+### 16. Agent Setup Installer (`v1.3.0+`)
+
+```bash
+athena install --agent claude-code
+```
+
+Installs Athena skills/hooks cleanly for `hermes`, `openclaw`, `claude-code`, `codex`, `cursor`, and `pi`.
+
+### 17. Optional Hybrid Rust Acceleration (`v1.3.1+`)
+
+```bash
+python scripts/build_rust_accel.py
+FAST_ANYTHING_DISABLE=1 athena graph . --query "auth"
+```
+
+Builds `.fast/ports/*` PyO3 extensions into `.fast/lib/` (transparently falls back to pure Python when unbuilt or when `FAST_ANYTHING_DISABLE=1` is set).
