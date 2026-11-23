@@ -1,3 +1,37 @@
+## Version-by-Version Testing History
+
+| Version | Focus | Repositories & Scale Tested | Key Outcome |
+| :--- | :--- | :--- | :--- |
+| **`v1.0.0`** | Python AST diffing, evidence grounding & Ollama fallback | `85` repositories (`4.39M+` stars, `4,050` commits) + `19/19` quality benchmark | `30/30` real bugs resolved; `100%` ground-truth accuracy |
+| **`v1.1.0`** | Multi-language structural analysis & recursive-call analysis | `55` multi-language repos (`11` languages, `5,500` commits, `10,680` hunks) | `55/55` (`100%`) pass rate |
+| **`v1.2.0`** | TUI, SARIF 2.1.0, `check --staged`, `semver-check`, `SymbolCache`, security audit | `100`-repo 5-pass consistency run + `158` automated pytest tests | Isolated committed vs dirty trees; fixed `behavior_changed` schema |
+| **`v1.3.0`** | Persistent code graph, 2KB repo map, `shortcut:` debt, `ev_<sha256>`/`unk_<sha256>` & cross-agent installer | `10` fresh `10k+`-star repos (`100` commits each, `8,804` files) + `1,000`-commit stress tests (`FastAPI`, `Ollama`, `Tauri`, `Svelte`) | `100%` pass (`0` errors); `49x–2,067x` token reduction |
+| **`v1.3.1`** | Predictive test selection (`athena affected-tests`), `WORKING_TREE` TOCTOU drift check, unit-shift heuristic, TS barrel re-exports, PHP/Laravel magic & CUDA/TeX support | `3` NVIDIA 2026 & CUDA repos (`1,000+` commits) + `10` diverse high-star repos (`React`, `PowerToys`, `TypeScript`, `FRP`, `Deno`, `Laravel`, `Rails`, `Kotlin`, `.NET`, `LaTeX2e`) | `13/13` (`100%`) pass (`0` errors); up to `3,025.0x` token reduction |
+
+---
+
+## v1.3.1 Real-World Benchmark (NVIDIA 2026/CUDA + 10 Diverse High-Star Repos)
+
+Tested offline with `0` errors (`13/13` pass) across `24,766` source files, `175,525` graph nodes, and `197,601` edges:
+
+| Repository | Language | Stars | Span | Files | Nodes / Edges | Unknowns | Breaking Findings | Predicted Tests | Cold -> Warm Cache | Token Reduction |
+| :--- | :--- | ---: | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `NVIDIA/auto-ontology` | Python (2026) | 14,568 | `HEAD~1000` | 897 | 7,486 / 23,258 | 525 | 0 | 174 | 33.3s -> 1.9s | **618.6x** |
+| `NVIDIA/NeMo-Relay` | Rust (2026) | 257 | `HEAD~1000` | 1,560 | 32,331 / 48,324 | 225 | 61 | 727 | 82.3s -> 6.7s | **3,025.0x** |
+| `NVIDIA/cuvs` | CUDA / C++ | 903 | `HEAD~1000` | 1,269 | 6,148 / 7,184 | 17 | 21 | 306 | 34.2s -> 1.8s | **1,330.2x** |
+| `laravel/laravel` | PHP / Blade | 85,480 | `HEAD~1000` | 24 | 81 / 69 | 0 | 0 | 0 | 1.4s -> 0.2s | **4.4x** |
+| `rails/rails` | Ruby | 59,182 | `HEAD~1000` | 3,099 | 20,635 / 19,311 | 0 | 8 | 303 | 129.3s -> 12.0s | **1,335.2x** |
+| `facebook/react` | JavaScript | 252,934 | `HEAD~100` | 4,161 | 20,714 / 19,216 | 0 | 4 | 183 | 236.8s -> 12.5s | **1,453.0x** |
+| `microsoft/TypeScript` | TypeScript / Go | 111,875 | `HEAD~100` | 503 | 7,879 / 7,907 | 0 | 1 | 11 | 29.3s -> 2.8s | **1,052.1x** |
+| `denoland/deno` | Rust | 109,038 | `HEAD~100` | 1,697 | 33,010 / 35,688 | 0 | 47 | 129 | 107.6s -> 8.6s | **2,411.5x** |
+| `microsoft/PowerToys` | C / C# | 141,325 | `HEAD~100` | 2,415 | 9,088 / 6,780 | 0 | 0 | 2 | 128.3s -> 6.3s | **1,258.6x** |
+| `fatedier/frp` | Go | 110,732 | `HEAD~100` | 247 | 2,653 / 2,436 | 0 | 0 | 1 | 11.7s -> 1.0s | **250.3x** |
+| `JetBrains/kotlin` | Kotlin | 53,614 | `HEAD~100` | 4,406 | 16,278 / 12,611 | 0 | 0 | 19 | 183.1s -> 9.7s | **1,794.9x** |
+| `latex3/latex2e` | TeX | 2,523 | `HEAD~1000` | 154 | 561 / 393 | 0 | 0 | 0 | 9.8s -> 0.4s | **1,527.1x** |
+| `dotnet/runtime` | C# | 18,461 | `HEAD~100` | 4,334 | 18,661 / 14,424 | 0 | 0 | 0 | 229.6s -> 11.4s | **1,978.0x** |
+
+---
+
 ## v1.3.0 Real-World Benchmark (10 Languages, 100+ Commits Each)
 
 In **v1.3.0**, Athena was tested offline against **10 fresh 10k+-star repositories** (`396,964` cumulative GitHub stars) across 10 languages, inspecting `100` commits (`HEAD~100..HEAD`) and `8,804` source files with **0 errors (`10/10` pass)**:

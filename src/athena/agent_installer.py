@@ -38,7 +38,7 @@ description: Local-first evidence-backed code knowledge graph, breaking-change A
 """
 
 _HERMES_PLUGIN_YAML = """name: athena
-version: "1.3.0"
+version: "1.3.1"
 description: "Athena local-first code graph, repo map, and breaking-change guard for Hermes."
 entry: "__init__.py"
 hooks:

@@ -121,6 +121,7 @@ def test_mcp_server_tool_registration_and_unguarded_none_default(mcp_test_repo: 
                 "scan_debt",
                 "inspect_analysis_view",
                 "discover_tools",
+                "predict_affected_tests",
             }:
                 assert dumped_ann["openWorldHint"] is False
             else:

@@ -18,12 +18,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_and_docs_sync() -> None:
-    assert __version__ == "1.3.0"
-    assert 'version: "1.3.0"' in _HERMES_PLUGIN_YAML
+    assert __version__ == "1.3.1"
+    assert 'version: "1.3.1"' in _HERMES_PLUGIN_YAML
     changelog = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## 1.3.0" in changelog
+    assert "## 1.3.1" in changelog
     readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "v1.3.0" in readme
+    assert "v1.3.1" in readme
     skill = (_REPO_ROOT / "skills" / "athena" / "SKILL.md").read_text(encoding="utf-8")
     assert "query_code_graph" in skill and "shortcut:" in skill
 

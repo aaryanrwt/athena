@@ -65,6 +65,9 @@ _LANG_BY_EXT: dict[str, str] = {
     ".cpp": "cpp",
     ".hpp": "cpp",
     ".cc": "cpp",
+    ".cu": "cuda",
+    ".cuh": "cuda",
+    ".tex": "tex",
 }
 
 _LANG_FAMILY: dict[str, str] = {
@@ -80,6 +83,8 @@ _LANG_FAMILY: dict[str, str] = {
     "csharp": "dotnet",
     "c": "c_cpp",
     "cpp": "c_cpp",
+    "cuda": "c_cpp",
+    "tex": "tex",
 }
 
 # Non-backtracking line-anchored structural regexes (never nested quantifiers)
@@ -129,6 +134,14 @@ _STRUCTURAL_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "cpp": (
         re.compile(r"^\s*(?:class|struct|namespace)\s+([A-Za-z_][A-Za-z0-9_]*)"),
     ),
+    "cuda": (
+        re.compile(r"^\s*(?:__global__|__device__|__host__)(?:\s+(?:__device__|__host__|inline|static))*\s+[A-Za-z_][A-Za-z0-9_:<>*&\s]+\s+([A-Za-z_][A-Za-z0-9_]*)\s*\("),
+        re.compile(r"^\s*(?:class|struct|namespace)\s+([A-Za-z_][A-Za-z0-9_]*)"),
+    ),
+    "tex": (
+        re.compile(r"^\s*\\(?:sub)*section\*?\{([^}]+)\}"),
+        re.compile(r"^\s*\\newcommand\*?\{\\([A-Za-z0-9_]+)\}"),
+    ),
 }
 
 _IMPORT_PATTERNS: dict[str, re.Pattern[str]] = {
@@ -137,6 +150,8 @@ _IMPORT_PATTERNS: dict[str, re.Pattern[str]] = {
     "go": re.compile(r"""^\s*(?:[A-Za-z_][A-Za-z0-9_]*\s+)?["']([^"']+)["']"""),
     "rust": re.compile(r"""^\s*use\s+([A-Za-z0-9_:]+);"""),
 }
+_TS_JS_REEXPORT_RE = re.compile(r"""^\s*export\s+(?:\*|\{[^}]+\})\s+from\s+['"]([^'"]+)['"]""")
+_PHP_DYNAMIC_RE = re.compile(r"""(?:__callStatic|__call|->\s*(?:bind|singleton)\s*\(|app\s*\(\s*\)\s*->\s*make\s*\()""")
 
 
 class GraphNode(BaseModel):
@@ -493,6 +508,7 @@ def _extract_structural_file_graph(
     patterns = _STRUCTURAL_PATTERNS.get(language, ())
     imp_pat = _IMPORT_PATTERNS.get(language)
     seen_syms: set[str] = set()
+    unknowns: list[ResidualUnknownRecord] = []
 
     for idx, line in enumerate(source.splitlines(), start=1):
         if len(line) > 512:
@@ -506,6 +522,24 @@ def _extract_structural_file_graph(
             m_imp = imp_pat.match(line)
             if m_imp:
                 call_hints.append({"source": mod_id, "target_name": m_imp.group(1), "relation": "imports", "lang": language})
+        if language in {"typescript", "javascript"}:
+            m_reexp = _TS_JS_REEXPORT_RE.match(line)
+            if m_reexp:
+                call_hints.append({"source": mod_id, "target_name": m_reexp.group(1), "relation": "imports", "lang": language})
+        if language == "php" and _PHP_DYNAMIC_RE.search(line):
+            unk_payload = {"kind": "dynamic_dispatch", "file": rel_path, "line": idx, "sym": "php_dynamic"}
+            unknowns.append(
+                ResidualUnknownRecord(
+                    unknown_id=canonical_unknown_id(unk_payload),
+                    kind="dynamic_dispatch",
+                    severity="medium",
+                    file_path=rel_path,
+                    line=idx,
+                    symbol=mod_id,
+                    detail="Dynamic PHP/Laravel magic or container binding (`__callStatic`/`__call`/`bind`/`make`) cannot be statically resolved.",
+                    remediation="Inspect service provider bindings or facade target manually.",
+                )
+            )
         for pat in patterns:
             m = pat.match(line)
             if m:
@@ -537,7 +571,7 @@ def _extract_structural_file_graph(
                     )
                 break
 
-    return nodes, edges, call_hints, [], 0
+    return nodes, edges, call_hints, unknowns, 0
 
 
 def _assign_deterministic_communities(
@@ -703,6 +737,10 @@ def build_code_graph(
             stem = Path(n.file_path).with_suffix("").as_posix().replace("/", ".")
             modules_by_stem[stem].append(n.id)
             modules_by_stem[Path(n.file_path).stem].append(n.id)
+            if Path(n.file_path).stem == "index" and Path(n.file_path).parent.as_posix() != ".":
+                pkg_stem = Path(n.file_path).parent.as_posix().replace("/", ".")
+                modules_by_stem[pkg_stem].append(n.id)
+                modules_by_stem[Path(n.file_path).parent.name].append(n.id)
         else:
             short = n.label.split(".")[-1]
             symbols_by_family_and_name[(fam, short)].append(n.id)

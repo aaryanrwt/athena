@@ -88,8 +88,8 @@ def polyglot_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_version_is_1_3_0() -> None:
-    assert __version__ == "1.3.0"
+def test_version_is_1_3_x() -> None:
+    assert __version__ == "1.3.1"
 
 
 def test_evidence_store_canonical_ids_and_paging() -> None:

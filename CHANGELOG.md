@@ -2,6 +2,17 @@
 
 All notable changes to Athena are recorded here. The project follows semantic versioning.
 
+## 1.3.1
+
+### Added & Fixed
+
+- **`WORKING_TREE` Stat-First TOCTOU Drift Detection (`src/athena/git_inspector.py`, `release_notes.py`)**: Records `(st_mtime_ns, st_size)` when reading `WORKING_TREE` blobs and re-stats touched files before returning, emitting an explicit drift warning if files changed mid-flight.
+- **Unit-Shift Heuristic on `behavior_changed` (`src/athena/ast_analyzer.py`)**: Flags possible unit-scaling shifts (e.g., milliseconds vs. seconds on `timeout`/`delay`/`ttl` parameters) when parameter types remain compatible.
+- **Multi-Hop TS/JS Barrel Re-Exports (`src/athena/graph_store.py`)**: Resolves `export { ... } from '...'` and `export * from '...'` plus directory `index` stems so consumer -> barrel -> target edges connect in `CodeGraph`.
+- **PHP/Laravel Dynamic Magic `ResidualUnknown` Tracking (`src/athena/graph_store.py`)**: Flags `__callStatic`, `__call`, `->bind(`, `->singleton(`, and `app()->make(` as `ResidualUnknownRecord(kind="dynamic_dispatch")` so Laravel/PHP graphs accurately report `completeness="partial"`.
+- **Predictive Test Selection (`src/athena/test_selector.py`, `athena affected-tests`, `predict_affected_tests`)**: Maps diffed files and AST symbols to impacted pytest, Playwright (`.spec.ts`/`.e2e.ts`), and unit test suites.
+- **CUDA & TeX Language Support (`src/athena/graph_store.py`)**: Added `.cu`/`.cuh` (`__global__`/`__device__`/`__host__` kernels) and `.tex` (`\section`/`\newcommand`) structural extraction.
+
 ## 1.3.0
 
 ### Added

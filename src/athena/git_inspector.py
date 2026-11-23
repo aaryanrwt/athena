@@ -85,6 +85,24 @@ class RawRangeExtraction:
     base_blobs: dict[str, str] = field(default_factory=dict)
     target_blobs: dict[str, str] = field(default_factory=dict)
     evidence_registry: dict[str, EvidenceRecord] = field(default_factory=dict)
+    working_tree_stats: dict[str, tuple[int, int]] = field(default_factory=dict)
+
+
+def detect_working_tree_drift(extraction: RawRangeExtraction) -> list[str]:
+    """Stat-first TOCTOU check: return any WORKING_TREE files modified mid-analysis."""
+    if extraction.resolved_target_sha != "WORKING_TREE" or not extraction.working_tree_stats:
+        return []
+    drifted: list[str] = []
+    for rel_path, (orig_mtime_ns, orig_size) in sorted(extraction.working_tree_stats.items()):
+        candidate = extraction.repo_path / rel_path
+        try:
+            st = candidate.stat()
+        except OSError:
+            drifted.append(rel_path)
+            continue
+        if st.st_mtime_ns != orig_mtime_ns or st.st_size != orig_size:
+            drifted.append(rel_path)
+    return drifted
 
 
 def run_git_command(
@@ -735,6 +753,7 @@ def extract_revision_range_data(
     batched_partial_paths = set(path_filter_args)
 
     evidence_registry: dict[str, EvidenceRecord] = {}
+    working_tree_stats: dict[str, tuple[int, int]] = {}
     ev_counter = 1
 
     def _next_ev_id() -> str:
@@ -873,8 +892,10 @@ def extract_revision_range_data(
                     wt_candidate = repo_path / file_path
                     if wt_candidate.exists() and wt_candidate.is_file() and is_safe_repo_file(repo_path, wt_candidate):
                         try:
-                            if wt_candidate.stat().st_size <= MAX_SOURCE_BLOB_BYTES:
+                            st = wt_candidate.stat()
+                            if st.st_size <= MAX_SOURCE_BLOB_BYTES:
                                 t_blob = wt_candidate.read_text(encoding="utf-8", errors="replace")
+                                working_tree_stats[file_path] = (st.st_mtime_ns, st.st_size)
                         except OSError:
                             t_blob = None
                 if t_blob is None and target_sha != "WORKING_TREE":
@@ -908,5 +929,6 @@ def extract_revision_range_data(
         base_blobs=base_blobs,
         target_blobs=target_blobs,
         evidence_registry=evidence_registry,
+        working_tree_stats=working_tree_stats,
     )
 

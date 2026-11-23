@@ -186,6 +186,12 @@ def main(argv: list[str] | None = None) -> int:
     p_view.add_argument("--offset", type=int, default=0, help="Start offset")
     p_view.add_argument("--limit", type=int, default=50, help="Page size")
 
+    # affected-tests command (v1.3.1)
+    p_tests = sub.add_parser("affected-tests", help="Predict pytest/Playwright/unit tests impacted by git diff")
+    p_tests.add_argument("repo_path", nargs="?", default=".", help="Path to local Git repository (default: .)")
+    p_tests.add_argument("--base", default="AUTO", help="Base revision (tag, branch, SHA, or AUTO)")
+    p_tests.add_argument("--target", default="HEAD", help="Target revision (HEAD, tag, branch, or WORKING_TREE)")
+
     args = parser.parse_args(argv)
 
     cache_dir = args.cache_dir or os.environ.get("ATHENA_CACHE_DIR") or None
@@ -392,6 +398,17 @@ def main(argv: list[str] | None = None) -> int:
         res = DEFAULT_EVIDENCE_STORE.inspect_view(args.evidence_id, args.facet, offset=args.offset, limit=args.limit)
         print(json.dumps(res, indent=2))
         return 0 if res.get("status") == "ok" else 1
+
+    if args.command == "affected-tests":
+        from athena.test_selector import predict_affected_tests
+
+        try:
+            res = predict_affected_tests(args.repo_path, base_ref=args.base, target_ref=args.target)
+            print(json.dumps(res, indent=2))
+            return 0
+        except AthenaValidationError as exc:
+            print(json.dumps({"status": "error", "error_code": exc.code, "error_message": exc.message}, indent=2))
+            return 2
 
     return 0
 

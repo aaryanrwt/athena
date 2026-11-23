@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from athena.ast_analyzer import run_structural_code_analysis
-from athena.git_inspector import extract_revision_range_data
+from athena.git_inspector import detect_working_tree_drift, extract_revision_range_data
 from athena.models import (
     BreakingChangeReport,
     EvidenceRecord,
@@ -173,6 +173,14 @@ def run_breaking_change_detection(
 
     if not include_low_confidence:
         breaking_findings = [f for f in breaking_findings if f.confidence != "low"]
+
+    drifted_wt = detect_working_tree_drift(extraction)
+    if drifted_wt:
+        warnings.append(
+            "Working-tree file(s) modified mid-analysis (TOCTOU drift): "
+            + ", ".join(drifted_wt[:10])
+            + ". Re-run to refresh caller spans."
+        )
 
     return redact_model(BreakingChangeReport(
         status="ok",

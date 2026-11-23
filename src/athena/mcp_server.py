@@ -27,6 +27,7 @@ from athena.release_notes import (
 )
 from athena.repo_map import build_repo_map
 from athena.security import redact_secrets
+from athena.test_selector import predict_affected_tests
 
 
 def _safe_exception_detail(exc: Exception) -> str:
@@ -568,6 +569,7 @@ _TOOL_CATALOG_METADATA: tuple[dict[str, Any], ...] = (
     {"name": "get_repo_map", "category": "graph", "tier": "hot", "summary": "2KB zero-search architectural export map."},
     {"name": "query_code_graph", "category": "graph", "tier": "hot", "summary": "Trigram+IDF + hub-guarded BFS code graph query."},
     {"name": "detect_potential_breaking_changes", "category": "analysis", "tier": "hot", "summary": "AST signature diffing & caller blast radius."},
+    {"name": "predict_affected_tests", "category": "testing", "tier": "hot", "summary": "Select pytest/Playwright/unit tests impacted by diff."},
     {"name": "inspect_analysis_view", "category": "evidence", "tier": "hot", "summary": "Page through retained ev_<sha256> bundles."},
     {"name": "analyze_git_history", "category": "analysis", "tier": "cold", "summary": "Group commits/diffs into evidence-backed stories."},
     {"name": "generate_release_notes", "category": "release", "tier": "cold", "summary": "Render audience-tailored Markdown release notes."},
@@ -577,6 +579,35 @@ _TOOL_CATALOG_METADATA: tuple[dict[str, Any], ...] = (
     {"name": "generate_verified_release_brief", "category": "release", "tier": "cold", "summary": "Alias for generate_release_notes."},
     {"name": "discover_tools", "category": "meta", "tier": "hot", "summary": "Search Athena's hot/cold MCP tool catalog."},
 )
+
+
+@mcp_app.tool(
+    name="predict_affected_tests",
+    description=(
+        "Predict which unit or e2e test files (pytest, Playwright .spec.ts, etc.) should run "
+        "based on changed files and AST symbols between base_ref and target_ref."
+    ),
+    annotations=ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+def predict_affected_tests_tool(
+    repo_path: str,
+    base_ref: str = "AUTO",
+    target_ref: str = "HEAD",
+) -> dict[str, Any]:
+    """Select test files impacted by changes between base_ref and target_ref."""
+    try:
+        return predict_affected_tests(repo_path, base_ref=base_ref, target_ref=target_ref)
+    except Exception as exc:
+        return {
+            "status": "error",
+            "error_code": "TEST_SELECTION_ERROR",
+            "error_message": f"Unexpected error predicting affected tests: {_safe_exception_detail(exc)}",
+        }
 
 
 @mcp_app.tool(

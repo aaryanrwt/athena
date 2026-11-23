@@ -2032,6 +2032,42 @@ def _collect_init_reexports(extraction: RawRangeExtraction) -> set[str]:
     return reexported
 
 
+_UNIT_SENSITIVE_KEYWORDS = (
+    "timeout",
+    "delay",
+    "ttl",
+    "interval",
+    "duration",
+    "wait",
+    "latency",
+    "expiry",
+    "expire",
+)
+_UNIT_SCALE_MARKERS = ("1000", "1e3", "60", "sleep", "millisecond", "second", "_ms", "_s")
+
+
+def _detect_unit_shift_risk(fpath: str, old_s: _PySymbolInfo, new_s: _PySymbolInfo) -> tuple[str, bool, str, str] | None:
+    """Detect possible unit-scaling shifts (e.g. ms vs s) when parameter type stays compatible."""
+    haystack = f"{old_s.qualified_name} {old_s.signature_str}".lower()
+    if not any(kw in haystack for kw in _UNIT_SENSITIVE_KEYWORDS):
+        return None
+    old_dump = old_s.body_ast_dump.lower()
+    new_dump = new_s.body_ast_dump.lower()
+    if old_dump == new_dump:
+        return None
+    old_hits = {m for m in _UNIT_SCALE_MARKERS if m in old_dump}
+    new_hits = {m for m in _UNIT_SCALE_MARKERS if m in new_dump}
+    if old_hits != new_hits:
+        return (
+            "behavior_changed",
+            True,
+            "medium",
+            f"Possible unit-shift in `{new_s.qualified_name}` ({fpath}): parameter type appears unchanged, "
+            "but body scaling/unit markers changed. Review callers passing numeric literals or unit-named constants.",
+        )
+    return None
+
+
 def _build_added_symbol_recursion_issues(fpath: str, new_s: _PySymbolInfo) -> list[tuple[str, bool, str, str]]:
     """Return high-severity behavioral/signature findings if a newly added function contains recursion defects."""
     issues: list[tuple[str, bool, str, str]] = []
@@ -2234,6 +2270,9 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                 if old_s.body_ast_dump != new_s.body_ast_dump:
                     modified_symbol_names.add(qname)
                 diffs = _compare_python_symbol(fpath, old_s, new_s)
+                unit_issue = _detect_unit_shift_risk(fpath, old_s, new_s)
+                if unit_issue is not None:
+                    diffs.append(unit_issue)
                 for change_kind, is_brk, sev, details in diffs:
                     b_span = LineSpan(start_line=old_s.start_line, end_line=old_s.end_line)
                     t_span = LineSpan(start_line=new_s.start_line, end_line=new_s.end_line)
