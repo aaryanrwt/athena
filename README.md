@@ -16,10 +16,10 @@
 
 <p align="center">
   <a href="https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml"><img alt="CI" src="https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml/badge.svg?branch=main" /></a>
-  <a href="https://github.com/aaryanrwt/athena/releases/tag/v1.3.1"><img alt="Release" src="https://img.shields.io/github/v/tag/aaryanrwt/athena?style=flat-square&logo=github&logoColor=E0E7FF&label=release&labelColor=111426&color=818CF8" /></a>
-  <a href="https://github.com/aaryanrwt/athena/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/aaryanrwt/athena?style=flat-square&logo=github&logoColor=E0E7FF&label=stars&labelColor=111426&color=A855F7" /></a>
-  <a href="https://github.com/aaryanrwt/athena/commits/main"><img alt="Last Commit" src="https://flat.badgen.net/github/last-commit/aaryanrwt/athena?label=activity&labelColor=111426&color=38BDF8" /></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/aaryanrwt/athena?style=flat-square&label=license&labelColor=111426&color=6366F1" /></a>
+  <a href="https://github.com/aaryanrwt/athena/releases"><img alt="Release" src="assets/badges/release.svg" /></a>
+  <a href="https://github.com/aaryanrwt/athena/stargazers"><img alt="GitHub Stars" src="assets/badges/stars.svg" /></a>
+  <a href="https://github.com/aaryanrwt/athena/commits/main"><img alt="Last Commit" src="assets/badges/activity.svg" /></a>
+  <a href="LICENSE"><img alt="License" src="assets/badges/license.svg" /></a>
   <br />
   <a href="https://m8ven.ai/mcp/aaryanrwt/athena?s=readme"><img alt="M8ven Score" src="https://m8ven.ai/badge/mcp/aaryanrwt/athena" height="20" /></a>
   <a href="https://hub.xerj.org/contributors/aaryanrwt"><img alt="XERJ Corpus Hub contributor" src="https://hub.xerj.org/contributors/aaryanrwt/badge.svg" height="20" /></a>
