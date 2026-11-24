@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="340" viewBox="0 0 880 340" role="img" aria-label="aaryanrwt/athena Star History: 21 stars through Nov 24, 2026">
+  <defs>
+    <clipPath id="cardClip"><rect x="0.75" y="0.75" width="878.50" height="338.50" rx="16"/></clipPath>
+    <linearGradient id="lineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="52%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="areaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#06B6D4" stop-opacity="0.01"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#cardClip)">
+    <rect x="0" y="0" width="880" height="340" fill="#FFFFFF"/>
+    <rect x="0" y="0" width="880" height="3" fill="url(#lineGrad)"/>
+  </g>
+  <rect x="0.75" y="0.75" width="878.50" height="338.50" rx="16" fill="none" stroke="#CBD5E1" stroke-width="1.5"/>
+
+  <text x="28" y="38" fill="#0F172A" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="17" font-weight="700">Star History</text>
+  <text x="28" y="57" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="500">aaryanrwt/athena · Live GitHub Stargazers</text>
+  <rect x="678.0" y="22" width="74.0" height="28" rx="14" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1"/>
+  <text x="715.0" y="40" text-anchor="middle" fill="#047857" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600">+8 in 7d</text>
+  <rect x="762.0" y="22" width="90.0" height="28" rx="14" fill="#F5F3FF" stroke="#DDD6FE" stroke-width="1"/>
+  <g transform="translate(773.0, 29) scale(0.58)" fill="#7C3AED">
+    <path d="M12 2l2.9 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l7.1-1.01L12 2z"/>
+  </g>
+  <text x="818.0" y="40" text-anchor="middle" fill="#6D28D9" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600">21 Stars</text>
+
+  <line x1="56" y1="282.00" x2="846" y2="282.00" stroke="#CBD5E1" stroke-width="1"/>
+  <text x="46" y="286.00" text-anchor="end" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">0</text>
+  <line x1="56" y1="243.20" x2="846" y2="243.20" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="46" y="247.20" text-anchor="end" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">5</text>
+  <line x1="56" y1="204.40" x2="846" y2="204.40" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="46" y="208.40" text-anchor="end" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">10</text>
+  <line x1="56" y1="165.60" x2="846" y2="165.60" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="46" y="169.60" text-anchor="end" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">15</text>
+  <line x1="56" y1="126.80" x2="846" y2="126.80" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="46" y="130.80" text-anchor="end" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">20</text>
+  <line x1="56" y1="88.00" x2="846" y2="88.00" stroke="#E2E8F0" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="46" y="92.00" text-anchor="end" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">25</text>
+  <text x="56.00" y="302" text-anchor="start" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">Oct 16</text>
+  <text x="218.05" y="302" text-anchor="middle" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">Oct 24</text>
+  <text x="380.10" y="302" text-anchor="middle" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">Nov 1</text>
+  <text x="521.90" y="302" text-anchor="middle" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">Nov 8</text>
+  <text x="683.95" y="302" text-anchor="middle" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">Nov 16</text>
+  <text x="846.00" y="302" text-anchor="end" fill="#64748B" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500">Nov 24</text>
+
+  <path d="M 56.00 282.00 C 62.75 282.00, 69.51 282.00, 76.26 282.00 C 83.01 282.00, 89.76 279.41, 96.51 274.24 C 103.26 269.07, 110.02 250.96, 116.77 250.96 C 123.52 250.96, 130.28 250.96, 137.03 250.96 C 143.78 250.96, 150.53 250.96, 157.28 250.96 C 164.03 250.96, 170.79 243.20, 177.54 243.20 C 184.29 243.20, 191.04 243.20, 197.79 243.20 C 204.54 243.20, 211.30 243.20, 218.05 243.20 C 224.80 243.20, 231.56 225.09, 238.31 219.92 C 245.06 214.75, 251.81 216.04, 258.56 212.16 C 265.31 208.28, 272.07 200.52, 278.82 196.64 C 285.57 192.76, 292.33 188.88, 299.08 188.88 C 305.83 188.88, 312.58 188.88, 319.33 188.88 C 326.08 188.88, 332.84 188.88, 339.59 188.88 C 346.34 188.88, 353.10 188.88, 359.85 188.88 C 366.60 188.88, 373.35 181.12, 380.10 181.12 C 386.85 181.12, 393.61 181.12, 400.36 181.12 C 407.11 181.12, 413.87 181.12, 420.62 181.12 C 427.37 181.12, 434.12 181.12, 440.87 181.12 C 447.62 181.12, 454.38 181.12, 461.13 181.12 C 467.88 181.12, 474.63 181.12, 481.38 181.12 C 488.13 181.12, 494.89 181.12, 501.64 181.12 C 508.39 181.12, 515.15 181.12, 521.90 181.12 C 528.65 181.12, 535.40 181.12, 542.15 181.12 C 548.90 181.12, 555.66 181.12, 562.41 181.12 C 569.16 181.12, 575.92 181.12, 582.67 181.12 C 589.42 181.12, 596.17 181.12, 602.92 181.12 C 609.67 181.12, 616.43 181.12, 623.18 181.12 C 629.93 181.12, 636.69 181.12, 643.44 181.12 C 650.19 181.12, 656.94 181.12, 663.69 181.12 C 670.44 181.12, 677.20 181.12, 683.95 181.12 C 690.70 181.12, 697.46 181.12, 704.21 181.12 C 710.96 181.12, 717.71 181.12, 724.46 181.12 C 731.21 181.12, 737.97 181.12, 744.72 181.12 C 751.47 181.12, 758.22 181.12, 764.97 181.12 C 771.72 181.12, 778.48 181.12, 785.23 181.12 C 791.98 181.12, 798.74 178.54, 805.49 173.36 C 812.24 168.19, 818.99 159.13, 825.74 150.08 C 832.49 141.02, 839.25 129.39, 846.00 119.04 L 846.00 282.00 L 56.00 282.00 Z" fill="url(#areaGrad)"/>
+  <path d="M 56.00 282.00 C 62.75 282.00, 69.51 282.00, 76.26 282.00 C 83.01 282.00, 89.76 279.41, 96.51 274.24 C 103.26 269.07, 110.02 250.96, 116.77 250.96 C 123.52 250.96, 130.28 250.96, 137.03 250.96 C 143.78 250.96, 150.53 250.96, 157.28 250.96 C 164.03 250.96, 170.79 243.20, 177.54 243.20 C 184.29 243.20, 191.04 243.20, 197.79 243.20 C 204.54 243.20, 211.30 243.20, 218.05 243.20 C 224.80 243.20, 231.56 225.09, 238.31 219.92 C 245.06 214.75, 251.81 216.04, 258.56 212.16 C 265.31 208.28, 272.07 200.52, 278.82 196.64 C 285.57 192.76, 292.33 188.88, 299.08 188.88 C 305.83 188.88, 312.58 188.88, 319.33 188.88 C 326.08 188.88, 332.84 188.88, 339.59 188.88 C 346.34 188.88, 353.10 188.88, 359.85 188.88 C 366.60 188.88, 373.35 181.12, 380.10 181.12 C 386.85 181.12, 393.61 181.12, 400.36 181.12 C 407.11 181.12, 413.87 181.12, 420.62 181.12 C 427.37 181.12, 434.12 181.12, 440.87 181.12 C 447.62 181.12, 454.38 181.12, 461.13 181.12 C 467.88 181.12, 474.63 181.12, 481.38 181.12 C 488.13 181.12, 494.89 181.12, 501.64 181.12 C 508.39 181.12, 515.15 181.12, 521.90 181.12 C 528.65 181.12, 535.40 181.12, 542.15 181.12 C 548.90 181.12, 555.66 181.12, 562.41 181.12 C 569.16 181.12, 575.92 181.12, 582.67 181.12 C 589.42 181.12, 596.17 181.12, 602.92 181.12 C 609.67 181.12, 616.43 181.12, 623.18 181.12 C 629.93 181.12, 636.69 181.12, 643.44 181.12 C 650.19 181.12, 656.94 181.12, 663.69 181.12 C 670.44 181.12, 677.20 181.12, 683.95 181.12 C 690.70 181.12, 697.46 181.12, 704.21 181.12 C 710.96 181.12, 717.71 181.12, 724.46 181.12 C 731.21 181.12, 737.97 181.12, 744.72 181.12 C 751.47 181.12, 758.22 181.12, 764.97 181.12 C 771.72 181.12, 778.48 181.12, 785.23 181.12 C 791.98 181.12, 798.74 178.54, 805.49 173.36 C 812.24 168.19, 818.99 159.13, 825.74 150.08 C 832.49 141.02, 839.25 129.39, 846.00 119.04" fill="none" stroke="url(#lineGrad)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="846.00" cy="119.04" r="9" fill="#06B6D4" opacity="0.18"/>
+  <circle cx="846.00" cy="119.04" r="4.5" fill="#06B6D4" stroke="#FFFFFF" stroke-width="2"/>
+  <rect x="818.0" y="91.0" width="26.0" height="20" rx="6" fill="#0F172A"/>
+  <text x="831.0" y="104.5" text-anchor="middle" fill="#FFFFFF" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600">21</text>
+
+  <text x="28" y="324" fill="#94A3B8" font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="500">Latest star: Nov 24, 2026 · Auto-updated via GitHub Actions</text>
+</svg>
