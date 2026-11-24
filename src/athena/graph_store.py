@@ -236,7 +236,7 @@ def _extract_python_file_graph(
                 file_path=rel_path,
                 line=exc.lineno or 0,
                 detail=f"Python SyntaxError: {redact_secrets(str(exc.msg or exc))}",
-                remediation="Fix syntax error or target a valid Python >=3.12 file.",
+                remediation="Fix syntax error or target a valid Python >=3.13 file.",
             )
         )
         return nodes, edges, call_hints, unknowns, 1

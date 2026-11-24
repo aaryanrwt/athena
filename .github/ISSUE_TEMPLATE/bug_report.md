@@ -30,6 +30,6 @@ What did Athena actually report, or what traceback occurred?
 
 ## Environment
 - **Athena Commit SHA**: (e.g., `git rev-parse HEAD`)
-- **Python Version**: (e.g., `Python 3.12` / `3.14`)
+- **Python Version**: (e.g., `Python 3.13` / `3.14` / `3.15`)
 - **OS**: (e.g., Windows / Linux / macOS)
 - **Operating Mode**: Mode A (Deterministic) / Mode B (Ollama `gemma:7b` or `qwen2.5-coder:7b`)

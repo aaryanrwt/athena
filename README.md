@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="#before-vs-after-rust-integration">
-    <img alt="Athena Telemetry: 100% Offline 0-LLM, Python 3.12-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup" src="assets/athena-pills-white.svg" width="100%" />
+    <img alt="Athena Telemetry: 100% Offline 0-LLM, Python 3.13-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup" src="assets/athena-pills-white.svg" width="100%" />
   </a>
 </p>
 
@@ -137,25 +137,33 @@ athena/
 ├── .github/                  # CI workflows (athena-audit, action-smoke) & PR comment renderer
 ├── action.yml                # Reusable GitHub Action
 ├── Dockerfile                # Rootless container image
-└── pyproject.toml            # Package & Python 3.12-3.15 metadata
+└── pyproject.toml            # Package & Python 3.13-3.15 metadata
 ```
 
 ---
 
 ## v1.3.2 5-Company Benchmark & v1.3.1 Comparison
 
-Tested offline across **5 fresh enterprise repositories** over **`1,050–1,091` commits** each (`5,291` total commits, `63.8M` raw tokens / `255.2 MB`, `8,798` scanned files, `60,693` nodes, `192,208` edges, `366` breaking findings, `2,180` predicted tests):
+Tested offline across **5 fresh enterprise repositories** (`1,050–1,091` commits each; **`5,291` commits** and **`63.8M` raw tokens / `255.2 MB`** total across `8,798` scanned files, `60,693` graph nodes, `192,208` edges, `366` breaking findings, and `2,180` predicted tests):
 
-| Company & Repo | Span (`HEAD~1050..HEAD`) | Breaking Changes (`v1.3.1 -> v1.3.2 Py -> v1.3.2 Rust`) | `--detail summary` Payload | Token Reduction (`Map / Query`) | Cross-Process `view` & Parity |
-| :--- | :--- | ---: | ---: | ---: | :--- |
-| **Google** (`google/go-github`) | `1,050` commits (Go) | `133.26s -> 24.45s ->` **`22.15s (6.02x)`** | `4.02 MB -> 644 B` | **`5,103.0x`** / `1,333.8x` | `rc=1 -> rc=0` · `111==111==111` |
-| **Apple** (`ml-explore/mlx`) | `1,050` commits (C++/Py) | `176.68s -> 12.21s ->` **`11.12s (15.89x)`** | `3.13 MB -> 644 B` | **`6,026.7x`** / `2,321.5x` | `rc=1 -> rc=0` · `39==39==39` |
-| **OpenAI** (`openai/openai-python`) | `1,091` commits (Py) | `284.69s -> 31.45s ->` **`30.98s (9.19x)`** | `6.33 MB -> 646 B` | **`11,246.0x`** / `2,910.4x` | `rc=1 -> rc=0` · `132==132==132` |
-| **Meta** (`meta-llama/llama-stack`) | `1,050` commits (Py/TS) | `TIMEOUT 300.14s -> 48.44s ->` **`37.57s (>8.0x)`** | `12.03 MB -> 644 B` | **`81,438.6x`** / `20,892.4x` | `rc=1 -> rc=0` · `61==61` |
-| **Microsoft** (`microsoft/semantic-kernel`) | `1,050` commits (C#/Py) | `223.71s -> 21.19s ->` **`12.48s (17.92x)`** | `9.67 MB -> 644 B` | **`24,290.1x`** / `6,254.4x` | `rc=1 -> rc=0` · `23==23==23` |
+### What We Found Because of This Test (In Plain English)
 
-- **Timeout fixed & `6.02x–17.92x` faster:** Bounded pre-redaction hunk slicing (`git_inspector.py`) plus precompiled doc-drift/caller guards and `O(1)` `commit_by_file` lookup (`ast_analyzer.py`) eliminated the `>300s` timeout on `meta-llama/llama-stack`.
-- **Cross-process continuity & strict contracts:** `athena view` recovered from `rc=1` to `rc=0` across all 5 repos via disk-backed `ev_<sha256>` persistence, `affected-tests --limit 5` paged cleanly (`has_more=true`), `map --max-chars -10` returned `rc=2` (`INVALID_MAX_CHARS`), and `athena doctor` passed (`hybrid_rust`) on all 5 repos. See [docs/evaluation.md](docs/evaluation.md) for full tables.
+1. **We caught and fixed a real 5-minute hang on huge repositories:** On Meta's `llama-stack` (`40.7M` tokens across `1,050` commits), `v1.3.1` got stuck and timed out after 5 minutes (`300.14s`) because it ran secret-redaction regexes on giant diff chunks before trimming them and re-scanned documentation repeatedly. Fixing that dropped the exact same scan to **37.57 seconds** (and made the other four repos **6.02x to 17.92x faster**) while catching the exact same `61` breaking changes.
+2. **Most of the speed gain came from smarter code, not just Rust:** Even with Rust turned completely off (`FAST_ANYTHING_DISABLE=1`), `v1.3.2` ran **5.45x to 14.47x faster** than `v1.3.1`; turning Rust on pushed that to **6.02x to 17.92x faster** with identical breaking-change counts and graph hashes across all 5 repos.
+3. **Huge diffs no longer flood an AI assistant's context window:** Raw reports on these repos were **3.13 MB to 12.03 MB** of JSON. With `--detail summary`, Athena returns a **~644-byte summary** with a saved ID and lets you inspect details later in a separate `athena view` command—which failed **5/5 times** in `v1.3.1` (memory-only) and now works **5/5 times** in `v1.3.2` (saved to disk).
+4. **Massive token savings for AI agents:** Using Athena's `<=2KB` repo map and focused graph queries instead of reading raw repositories cut context size by **5,103.0x to 81,438.6x** (map) and **1,333.8x to 20,892.4x** (query).
+5. **Bad inputs and giant test lists are handled cleanly:** `v1.3.1` silently accepted invalid flags like `athena map --max-chars -10` and dumped up to **994 predicted tests (276 KB)** at once on `microsoft/semantic-kernel`. `v1.3.2` rejects bad flags clearly (`INVALID_MAX_CHARS`), pages large test lists (`--limit 5` cuts `276,493 B` to `1,955 B`), and adds `athena doctor` for one-command setup checks.
+6. **One honest caveat we observed:** On Apple's `mlx`, a single cold Windows Rust graph build had subprocess startup variance (`18.03s` vs `5.87s` pure Python), even though breaking-change scanning on the same repo still jumped **15.89x faster** (`176.68s -> 11.12s`).
+
+| Company & Repo | Commits | Breaking Scan (`v1.3.1 -> v1.3.2`) | Report Size (Full -> Summary) | Map Savings |
+| :--- | :---: | :--- | ---: | ---: |
+| **Google** (`google/go-github`, Go) | `1,050` | `133.26s ->` **`22.15s`** `(6.02x faster)` | `4.02 MB -> 644 B` | **`5,103.0x`** |
+| **Apple** (`ml-explore/mlx`, C++/Py) | `1,050` | `176.68s ->` **`11.12s`** `(15.89x faster)` | `3.13 MB -> 644 B` | **`6,026.7x`** |
+| **OpenAI** (`openai/openai-python`, Py) | `1,091` | `284.69s ->` **`30.98s`** `(9.19x faster)` | `6.33 MB -> 646 B` | **`11,246.0x`** |
+| **Meta** (`meta-llama/llama-stack`, Py/TS) | `1,050` | `TIMEOUT 300.14s ->` **`37.57s`** `(>8.0x)` | `12.03 MB -> 644 B` | **`81,438.6x`** |
+| **Microsoft** (`microsoft/semantic-kernel`, C#/Py) | `1,050` | `223.71s ->` **`12.48s`** `(17.92x faster)` | `9.67 MB -> 644 B` | **`24,290.1x`** |
+
+Full Python-vs-Rust timings, SHA-256 graph parity hashes, and `athena view` / `affected-tests` / `doctor` comparisons: [docs/evaluation.md](docs/evaluation.md).
 
 ---
 

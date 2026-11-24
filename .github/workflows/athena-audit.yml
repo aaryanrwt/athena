@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.13", "3.14", "3.15"]
 
     steps:
       - name: Checkout Repository (Full History for Git Revision Tests)
@@ -39,10 +39,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
-
-      - name: Verify MCP 1.x Compatibility Floor
-        if: matrix.python-version == '3.12'
-        run: python -m pip install "mcp==1.26.0"
 
       - name: Configure Git Identity for Test Sandbox Repos
         run: |

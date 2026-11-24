@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 LABEL org.opencontainers.image.title="athena-mcp" \
       org.opencontainers.image.description="Athena: breaking-change and caller blast-radius analysis for git diffs" \

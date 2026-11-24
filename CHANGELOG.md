@@ -21,6 +21,7 @@ All notable changes to Athena are recorded here. The project follows semantic ve
   - Fixed multi-megabyte diff-hunk timeout & slow regex/walker scaling (`src/athena/git_inspector.py`, `src/athena/ast_analyzer.py`): bounded pre-redaction hunk slicing in `_parse_unified_diff_by_file` and added precompiled doc-drift/dynamic-call regex guards with fast substring checks plus `O(1)` `commit_by_file` indexing, eliminating `>300s` timeouts on `meta-llama/llama-stack` (`48.44s` pure Python / `37.57s` hybrid Rust) and achieving `6.02x–17.92x` breaking-change speedups vs `v1.3.1` across five `1,050+`-commit repositories (`google/go-github`, `ml-explore/mlx`, `openai/openai-python`, `meta-llama/llama-stack`, `microsoft/semantic-kernel`).
   - Fixed `build_repo_map` to reject non-positive `max_chars` (`INVALID_MAX_CHARS`) and fixed `cli.py` exit codes on `map`, `debt`, and `affected-tests`.
   - Added `athena doctor [repo_path]` for live Python, Git, MCP SDK, Rust kernel (`fast-anything`), evidence store, symbol cache, and repository diagnostics.
+  - **Python 3.13+ Runtime Floor (`pyproject.toml`, `.github/workflows/athena-audit.yml`, `Dockerfile`, `action.yml`)**: Dropped Python 3.12 from packaging, CI matrix (`3.13`, `3.14`, `3.15`), Docker base image (`python:3.13-slim`), and GitHub Action defaults (`3.13`).
 
 ## 1.3.1
 

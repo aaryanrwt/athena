@@ -55,7 +55,7 @@ docker build -t athena .
 docker run --rm -v "$PWD:/repo" athena breaking-changes /repo --base main --target HEAD
 ```
 
-The image is based on `python:3.12-slim`, includes `git`, runs as a non-root
+The image is based on `python:3.13-slim`, includes `git`, runs as a non-root
 user, and uses `athena` as the entrypoint.
 
 ## pre-commit

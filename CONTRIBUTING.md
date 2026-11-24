@@ -9,7 +9,7 @@ Whether you are reporting an AST edge case, improving caller blast-radius precis
 ## Development Setup
 
 ### Prerequisites
-- **Python**: `>= 3.12` (verified on Python `3.12`, `3.13`, `3.14`, and `3.15`)
+- **Python**: `>= 3.13` (verified on Python `3.13`, `3.14`, and `3.15`)
 - **Git**: `>= 2.30`
 - *(Optional)* **Rust / Cargo** (`rustc` / `cargo`): to build local PyO3 accelerations (`python scripts/build_rust_accel.py`); pure-Python fallback runs automatically without Rust.
 - *(Optional)* **Ollama**: Local Ollama server at `http://127.0.0.1:11434` (`gemma:latest` / `gemma:7b` or `qwen2.5-coder:7b`) for Mode B tests.
