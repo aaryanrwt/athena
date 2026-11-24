@@ -10,19 +10,15 @@
 
 <p align="center">
   <a href="#before-vs-after-rust-integration">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="assets/athena-pills-dark.svg" />
-      <source media="(prefers-color-scheme: light)" srcset="assets/athena-pills-light.svg" />
-      <img alt="Athena Telemetry: 100% Offline 0-LLM, Python 3.12-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup" src="assets/athena-pills-dark.svg" width="100%" />
-    </picture>
+    <img alt="Athena Telemetry: 100% Offline 0-LLM, Python 3.12-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup" src="assets/athena-pills-white.svg" width="100%" />
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/aaryanrwt/athena/athena-audit.yml?branch=main&style=flat-square&logo=githubactions&logoColor=E0E7FF&label=CI&labelColor=111426&color=34D399" /></a>
+  <a href="https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml"><img alt="CI" src="https://github.com/aaryanrwt/athena/actions/workflows/athena-audit.yml/badge.svg?branch=main" /></a>
   <a href="https://github.com/aaryanrwt/athena/releases/tag/v1.3.1"><img alt="Release" src="https://img.shields.io/github/v/tag/aaryanrwt/athena?style=flat-square&logo=github&logoColor=E0E7FF&label=release&labelColor=111426&color=818CF8" /></a>
   <a href="https://github.com/aaryanrwt/athena/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/aaryanrwt/athena?style=flat-square&logo=github&logoColor=E0E7FF&label=stars&labelColor=111426&color=A855F7" /></a>
-  <a href="https://github.com/aaryanrwt/athena/commits/main"><img alt="Last Commit" src="https://img.shields.io/github/last-commit/aaryanrwt/athena?style=flat-square&logo=git&logoColor=E0E7FF&label=activity&labelColor=111426&color=38BDF8" /></a>
+  <a href="https://github.com/aaryanrwt/athena/commits/main"><img alt="Last Commit" src="https://flat.badgen.net/github/last-commit/aaryanrwt/athena?label=activity&labelColor=111426&color=38BDF8" /></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/aaryanrwt/athena?style=flat-square&label=license&labelColor=111426&color=6366F1" /></a>
   <br />
   <a href="https://m8ven.ai/mcp/aaryanrwt/athena?s=readme"><img alt="M8ven Score" src="https://m8ven.ai/badge/mcp/aaryanrwt/athena" height="20" /></a>
