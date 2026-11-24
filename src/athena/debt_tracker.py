@@ -1,7 +1,7 @@
 """Technical Debt & `shortcut:` Ledger Scanner (`athena debt`).
 
-Distills `ponytail-debt` with AST enclosing-symbol binding and safe bounded
-file scanning (avoiding unbounded `git grep` memory spikes).
+Tracks `# shortcut: <limit>, <when to upgrade>` and optional `TODO`/`FIXME`
+markers with AST enclosing-symbol binding and bounded file/page scanning.
 """
 
 from __future__ import annotations
@@ -12,13 +12,13 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from athena.evidence_store import canonical_evidence_id
+from athena.evidence_store import canonical_evidence_id, paginate_items
 from athena.git_inspector import MAX_SOURCE_BLOB_BYTES
 from athena.graph_store import _collect_tracked_source_files
 from athena.security import redact_secrets, validate_repo_path
 
 _SHORTCUT_RE = re.compile(
-    r"(?:#|//|/\*)\s*(shortcut|ponytail)\s*:\s*(.+?)(?:\*/)?$",
+    r"(?:#|//|/\*)\s*(shortcut)\s*:\s*(.+?)(?:\*/)?$",
     re.IGNORECASE,
 )
 _TODO_RE = re.compile(
@@ -48,6 +48,11 @@ class DebtReport(BaseModel):
     total_shortcuts: int
     missing_trigger_count: int
     total_todos: int = 0
+    total_items: int = 0
+    offset: int = 0
+    limit: int | None = None
+    has_more: bool = False
+    partial: bool = False
     items: list[DebtItem] = Field(default_factory=list)
 
 
@@ -80,8 +85,11 @@ def scan_shortcut_debt(
     repo_path: str | Path,
     *,
     include_todos: bool = False,
+    offset: int = 0,
+    limit: int | None = None,
 ) -> DebtReport:
     """Scan repository source files for `shortcut: <limit>, <when to upgrade>` markers."""
+    _, _, _, _ = paginate_items((), offset=offset, limit=limit, max_limit=500, strict=True)
     repo_root = validate_repo_path(repo_path)
     files = _collect_tracked_source_files(repo_root)
     items: list[DebtItem] = []
@@ -140,11 +148,23 @@ def scan_shortcut_debt(
                         )
                     )
 
+    paged_items, total_items, effective_limit, has_more = paginate_items(
+        items,
+        offset=offset,
+        limit=limit,
+        max_limit=500,
+        strict=True,
+    )
     return DebtReport(
         repo_root=str(repo_root),
         total_files_scanned=len(files),
         total_shortcuts=shortcut_count,
         missing_trigger_count=missing_trigger,
         total_todos=todo_count,
-        items=items,
+        total_items=total_items,
+        offset=offset,
+        limit=effective_limit,
+        has_more=has_more,
+        partial=has_more,
+        items=paged_items,
     )

@@ -1,7 +1,7 @@
 """Zero-Search Codebase Map Generator (`athena map`).
 
-Distills `ponytail-map.js` using Athena's AST/structural graph instead of fragile
-regexes or unbounded `git grep`, preventing backtracking timeouts and prompt injection.
+Builds compact, prompt-injection-safe folder export maps from Athena's
+AST/structural graph with strict character budgets.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from athena.graph_store import DEFAULT_GRAPH_MANAGER, CodeGraph
+from athena.security import AthenaValidationError
 
 _SHARED_FOLDER_PRIORITY = (
     "core",
@@ -58,6 +59,11 @@ def build_repo_map(
     graph: CodeGraph | None = None,
 ) -> dict[str, Any]:
     """Build a compact (<= max_chars) prompt-injection-safe export map by folder."""
+    if isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars <= 0:
+        raise AthenaValidationError(
+            "INVALID_MAX_CHARS",
+            f"max_chars must be a positive integer (got {max_chars!r}).",
+        )
     max_chars = max(256, min(max_chars, 16000))
     cg = graph if graph is not None else DEFAULT_GRAPH_MANAGER.get_or_build(repo_path)
 

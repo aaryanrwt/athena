@@ -2,6 +2,26 @@
 
 All notable changes to Athena are recorded here. The project follows semantic versioning.
 
+## 1.3.2
+
+### Added & Fixed
+
+- **MCP Resources, URI Templates & Guided Workflow Prompts (`src/athena/mcp_server.py`)**:
+  - Exposed read-only MCP Resources (`athena://server/capabilities`, `athena://repo/map`, `athena://evidence/recent`) and URI Template (`athena://evidence/{evidence_id}`) across MCP `1.x` (`1.26+`) and `2.x` servers.
+  - Added three built-in workflow prompts (`pre_merge_audit`, `release_readiness_review`, `codebase_onboarding`) plus human-friendly `title` metadata on all 13 MCP tools and structured recovery hints (`retryable`, `remediation_action`, `error_kind`) on errors.
+- **Scoped Toolsets, Read-Only Mode & Local `streamable-http` Transport (`athena mcp`, `src/athena/mcp_server.py`)**:
+  - Added `--toolsets` (`git,graph,analysis,release,debt,testing,evidence,meta` or `all`) and `--read-only` to `athena mcp` / `create_mcp_server(...)`, restricting exposed tools cleanly at startup.
+  - Added `--transport {stdio,streamable-http}`, `--host`, `--port`, and `--allow-remote` with loopback binding enforced by default (`127.0.0.1` / `localhost` / `::1`) to block accidental remote exposure.
+- **Cross-Process Disk-Backed `EvidenceStore` (`src/athena/evidence_store.py`, `cli.py`)**:
+  - Persists `ev_<sha256>` evidence bundles atomically to `~/.athena/evidence` (or `$ATHENA_EVIDENCE_DIR`) with regex path-traversal validation and bounded LRU disk pruning, enabling separate CLI `athena view <ev_id> --facet ...` calls after `--detail summary`.
+  - Added `--detail {complete,summary}` to `athena analyze`, `athena breaking-changes`, and `athena graph`, and forwarded `detail` through `analyze_change_graph` and `verify_breaking_and_doc_drift`.
+- **Bounded Pagination, Strict Input Validation & `athena doctor` (`debt_tracker.py`, `test_selector.py`, `repo_map.py`, `cli.py`)**:
+  - Added `--offset` and `--limit` (`has_more`, `partial`) pagination across `scan_shortcut_debt`, `predict_affected_tests`, `athena debt`, `athena affected-tests`, and their MCP tools.
+  - Applied uniform error recovery classification (`_attach_error_recovery()`) across report-returning MCP tools (`inspect_repository`, `analyze_git_history`, `generate_release_notes`, `detect_potential_breaking_changes`) and strict `INVALID_OFFSET` / `INVALID_LIMIT` validation in `EvidenceStore.inspect_view()`.
+  - Fixed multi-megabyte diff-hunk timeout & slow regex/walker scaling (`src/athena/git_inspector.py`, `src/athena/ast_analyzer.py`): bounded pre-redaction hunk slicing in `_parse_unified_diff_by_file` and added precompiled doc-drift/dynamic-call regex guards with fast substring checks plus `O(1)` `commit_by_file` indexing, eliminating `>300s` timeouts on `meta-llama/llama-stack` (`48.44s` pure Python / `37.57s` hybrid Rust) and achieving `6.02x–17.92x` breaking-change speedups vs `v1.3.1` across five `1,050+`-commit repositories (`google/go-github`, `ml-explore/mlx`, `openai/openai-python`, `meta-llama/llama-stack`, `microsoft/semantic-kernel`).
+  - Fixed `build_repo_map` to reject non-positive `max_chars` (`INVALID_MAX_CHARS`) and fixed `cli.py` exit codes on `map`, `debt`, and `affected-tests`.
+  - Added `athena doctor [repo_path]` for live Python, Git, MCP SDK, Rust kernel (`fast-anything`), evidence store, symbol cache, and repository diagnostics.
+
 ## 1.3.1
 
 ### Added & Fixed

@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from athena.evidence_store import paginate_items
 from athena.git_inspector import MAX_SOURCE_BLOB_BYTES, extract_revision_range_data
 from athena.graph_store import _collect_tracked_source_files, _is_test_or_utility_path
 from athena.security import validate_repo_path
@@ -23,8 +24,11 @@ def predict_affected_tests(
     *,
     base_ref: str = "AUTO",
     target_ref: str = "HEAD",
+    offset: int = 0,
+    limit: int | None = None,
 ) -> dict[str, Any]:
     """Select test files (pytest, Playwright, unit/e2e) impacted by changes in base_ref..target_ref."""
+    _, _, _, _ = paginate_items((), offset=offset, limit=limit, max_limit=500, strict=True)
     repo_root = validate_repo_path(repo_path)
     extraction = extract_revision_range_data(
         repo_path_input=repo_root,
@@ -76,12 +80,24 @@ def predict_affected_tests(
                 }
             )
 
+    paged_selected, total_matched, effective_limit, has_more = paginate_items(
+        selected,
+        offset=offset,
+        limit=limit,
+        max_limit=500,
+        strict=True,
+    )
     return {
         "status": "ok",
         "repo_root": str(repo_root),
         "base_ref": extraction.base_ref,
         "target_ref": extraction.target_ref,
         "total_test_files": len(test_files),
-        "selected_count": len(selected),
-        "selected_tests": selected,
+        "selected_count": total_matched,
+        "returned_count": len(paged_selected),
+        "offset": offset,
+        "limit": effective_limit,
+        "has_more": has_more,
+        "partial": has_more,
+        "selected_tests": paged_selected,
     }

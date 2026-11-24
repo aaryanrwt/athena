@@ -600,7 +600,7 @@ def _write_summary(
 def _run_self_test() -> None:
     """Validate badge SVGs, monotone spline bounds, and XML validity in memory."""
     badges = {
-        "release": render_badge_svg("release", "v1.3.1", "#818CF8", _ICON_GITHUB),
+        "release": render_badge_svg("release", "v1.3.2", "#818CF8", _ICON_GITHUB),
         "stars": render_badge_svg("stars", "21", "#A855F7", _ICON_STAR),
         "activity": render_badge_svg("updated", "Nov 24", "#0EA5E9", _ICON_GIT_COMMIT),
         "license": render_badge_svg("license", "Apache-2.0", "#6366F1", _ICON_LICENSE),

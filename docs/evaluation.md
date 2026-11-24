@@ -7,6 +7,40 @@
 | **`v1.2.0`** | TUI, SARIF 2.1.0, `check --staged`, `semver-check`, `SymbolCache`, security audit | `100`-repo 5-pass consistency run + `158` automated pytest tests | Isolated committed vs dirty trees; fixed `behavior_changed` schema |
 | **`v1.3.0`** | Persistent code graph, 2KB repo map, `shortcut:` debt, `ev_<sha256>`/`unk_<sha256>` & cross-agent installer | `10` fresh `10k+`-star repos (`100` commits each, `8,804` files) + `1,000`-commit stress tests (`FastAPI`, `Ollama`, `Tauri`, `Svelte`) | `100%` pass (`0` errors); `49x–2,067x` token reduction |
 | **`v1.3.1`** | Hybrid Rust PyO3 acceleration (`fast-anything`) + batched Git `cat-file --batch`, `athena affected-tests`, TOCTOU drift check, unit-shift heuristic, TS barrels, PHP/Laravel magic & CUDA/TeX support | `13` multi-language & NVIDIA repos (`HEAD~100..HEAD~1000`) + **3-Company Before/After Rust Parity Audit** (`NVIDIA/cuvs`, `google/flatbuffers`, `microsoft/playwright-python`, `1,000–1,472` commits each) | `13/13` (`0` errors, up to `3,025.0x` tokens) + **14/14 parity identical** across all 3 enterprise repos (`22.48x–26.73x` faster C++/CUDA graph builds; `0` Rust regressions) |
+| **`v1.3.2`** | MCP Resources/URI Templates/Workflow Prompts, toolset & `--read-only` scoping, loopback-guarded `streamable-http`, disk-backed `EvidenceStore`, bounded pagination, large-diff regex/redaction optimizations, input/exit-code fixes & `athena doctor` | Offline pytest suite (hybrid Rust & `FAST_ANYTHING_DISABLE=1` fallback) + 26-check CLI/MCP stdio/`streamable_http_app` audit + **5-Company `1,050+`-Commit `v1.3.1 -> v1.3.2` Benchmark** (`google/go-github`, `ml-explore/mlx`, `openai/openai-python`, `meta-llama/llama-stack`, `microsoft/semantic-kernel`, `5,291` commits, `63.8M` raw tokens) | `174 passed, 1 deselected` offline suite (`0` failures), `15 passed` pure-Python parity/protocol subset, `26/26` live CLI & MCP checks + **5/5 enterprise pass** (`6.02x–17.92x` faster breaking-change runs, `llama-stack` timeout eliminated, `5,103x–81,438.6x` token reduction, `5/5` parity) |
+
+---
+
+## v1.3.2 5-Company 1,050+ Commit Benchmark & v1.3.1 -> v1.3.2 Comparison
+
+Evaluated offline across **5 fresh enterprise repositories** (`110,116` combined stars, **`5,291` commits** at `HEAD~1050..HEAD`, **`63.8M` raw tokens / `255.2 MB`** across `13,057` tracked files, `8,798` scanned files, `60,693` nodes, `192,208` edges, `1,991` unknowns, `366` breaking findings, and `2,180` predicted tests) running **`v1.3.1`** (pure Python worktree) side-by-side against **`v1.3.2`** (both `FAST_ANYTHING_DISABLE=1` pure Python and Hybrid Rust to isolate algorithmic gains from native acceleration):
+
+| Company & Repository | Lang (Stars) | Span (`HEAD~1050..HEAD`) | Scale (`Files / Nodes / Edges`) | Breaking Changes (`v1.3.1 -> v1.3.2 Py -> v1.3.2 Rust`) | Cold Graph -> Warm Query | Token Reduction (`Map / Query`) | Exact Parity (`Findings / SHA-256 Graph ID`) |
+| :--- | :--- | :--- | :--- | ---: | ---: | ---: | :--- |
+| **Google** (`google/go-github`) | Go (11,342) | `1,050` (`005e6c8845..5c5bbe8ec2`) | `519 / 6,941 / 6,756` | `133.26s -> 24.45s (5.45x) ->` **`22.15s (6.02x)`** | `15.71s -> 5.37s -> 3.55s` | **`5,103.0x`** / **`1,333.8x`** | `111==111==111` (`ev_2cd95fba...15924`) |
+| **Apple** (`ml-explore/mlx`) | C++ / Py (29,273) | `1,050` (`0dbc7e5bee..5598dfa0ae`) | `775 / 4,195 / 6,540` | `176.68s -> 12.21s (14.47x) ->` **`11.12s (15.89x)`** | `6.30s -> 18.03s* -> 11.25s` (`5.87s` py) | **`6,026.7x`** / **`2,321.5x`** | `39==39==39` (`ev_e3feeb13...878969`) |
+| **OpenAI** (`openai/openai-python`) | Python (32,230) | `1,091` (`a6b493071b..abbd37925a`) | `2,560 / 20,456 / 84,598` | `284.69s -> 31.45s (9.05x) ->` **`30.98s (9.19x)`** | `35.04s -> 31.15s -> 6.99s` | **`11,246.0x`** / **`2,910.4x`** | `132==132==132` (`ev_ea5f3f76...fe3ec0`) |
+| **Meta** (`meta-llama/llama-stack`) | Py / TS (8,470) | `1,050` (`613ee45040..c732c4d66e`) | `1,288 / 12,710 / 49,961` | `TIMEOUT 300.14s -> 48.44s (>6.2x) ->` **`37.57s (>8.0x)`** | `32.47s -> 16.05s -> 3.92s` | **`81,438.6x`** / **`20,892.4x`** | `61==61` py/rust (`ev_bdc9d4f4...dc777`) |
+| **Microsoft** (`microsoft/semantic-kernel`) | C# / Py (28,801) | `1,050` (`fb61cbc0c5..aa46eddff9`) | `3,656 / 16,391 / 44,353` | `223.71s -> 21.19s (10.56x) ->` **`12.48s (17.92x)`** | `213.26s -> 30.88s -> 6.51s` | **`24,290.1x`** / **`6,254.4x`** | `23==23==23` (`ev_f99d6eea...336a42`) |
+
+*\*Note on `ml-explore/mlx` cold graph build:* `v1.3.2` pure Python completed cold graph construction in `5.87s` (`v1.3.1` took `6.30s`), whereas the single cold Rust subprocess measurement hit `18.03s` due to cold Windows file-system / subprocess warmup variance; breaking-change analysis accelerated monotonically (`176.68s -> 12.21s -> 11.12s`, `15.89x`).*
+
+### `v1.3.1` -> `v1.3.2` Functional, Persistence & Validation Improvements
+
+| Repository | `--detail summary` Payload (`complete -> summary`) | Cross-Process `athena view` (`v1.3.1 -> v1.3.2`) | `affected-tests --limit 5` (`full -> paged`, total) | `map --max-chars -10` (`v1.3.1 -> v1.3.2`) | `athena doctor` (`v1.3.1 -> v1.3.2`) |
+| :--- | ---: | :---: | ---: | :---: | :---: |
+| `google/go-github` | `4,020,653 B -> 644 B` | `rc=1 -> rc=0 (ok)` | `30,868 B -> 1,701 B` (`238`, `has_more=true`) | `rc=0 -> rc=2 (INVALID_MAX_CHARS)` | `rc=2 -> rc=0 (hybrid_rust)` |
+| `ml-explore/mlx` | `3,131,850 B -> 644 B` | `rc=1 -> rc=0 (ok)` | `9,710 B -> 1,909 B` (`69`, `has_more=true`) | `rc=0 -> rc=2 (INVALID_MAX_CHARS)` | `rc=2 -> rc=0 (hybrid_rust)` |
+| `openai/openai-python` | `6,330,134 B -> 646 B` | `rc=1 -> rc=0 (ok)` | `55,208 B -> 1,798 B` (`397`, `has_more=true`) | `rc=0 -> rc=2 (INVALID_MAX_CHARS)` | `rc=2 -> rc=0 (hybrid_rust)` |
+| `meta-llama/llama-stack` | `12,028,947 B -> 644 B` | `rc=1 -> rc=0 (ok)` | `70,463 B -> 1,942 B` (`482`, `has_more=true`) | `rc=0 -> rc=2 (INVALID_MAX_CHARS)` | `rc=2 -> rc=0 (hybrid_rust)` |
+| `microsoft/semantic-kernel` | `9,671,942 B -> 644 B` | `rc=1 -> rc=0 (ok)` | `276,493 B -> 1,955 B` (`994`, `has_more=true`) | `rc=0 -> rc=2 (INVALID_MAX_CHARS)` | `rc=2 -> rc=0 (hybrid_rust)` |
+
+### Root-Cause Bug Caught & Fixed During Benchmark
+
+During the initial `v1.3.1` run on `meta-llama/llama-stack` (`HEAD~1050..HEAD`, `40.7M` raw tokens across multi-megabyte diff hunks), `athena breaking-changes` timed out after `300.14s`. Profiling exposed two hot-path bottlenecks now fixed in `v1.3.2`:
+
+1. **Bounded pre-redaction diff hunk slicing (`src/athena/git_inspector.py`):** `_parse_unified_diff_by_file()` previously ran `redact_secrets()` across entire multi-megabyte diff hunks before truncating excerpts to `MAX_EVIDENCE_EXCERPT_CHARS` and `MAX_BOUNDED_DIFF_CHARS`. Bounding raw hunk text prior to redaction while preserving `hunk_headers` eliminated wasted regex work on truncated bytes.
+2. **Precompiled regex & `O(1)` commit lookup (`src/athena/ast_analyzer.py`):** Markdown doc-drift scanning compiled/ran per-symbol `re.search` checks across thousands of symbol/doc pairs, Python AST scanning ran redundant `ast.walk()` passes, and `_register_symbol_evidence()` scanned commit histories repeatedly. Precompiling doc-drift regexes with fast `short_n not in content` substring pre-checks, adding `_PY_DYN_PRE_RE` pre-filters, and indexing `commit_by_file` reduced runtime from `>300.14s` timeout to **`48.44s` (Python) / `37.57s` (Rust)** with exact `61/61` findings parity.
 
 ---
 

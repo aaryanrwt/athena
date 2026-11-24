@@ -1,8 +1,8 @@
 """Cryptographic Content-Addressed Evidence, Residual Unknowns, and Retained Paging Store.
 
-Distills `morluto/rea`'s epistemic provenance model (`ev_<sha256>`, `unk_<sha256>`,
-summary-first retained delivery, and typed resource-constraint errors) into Athena's
-local-first Python 3.12-3.15+ architecture.
+Provides SHA-256 content-addressed provenance (`ev_<sha256>`, `unk_<sha256>`),
+summary-first retained delivery across in-process and cross-process calls,
+bounded pagination, and typed resource-constraint errors.
 """
 
 from __future__ import annotations
@@ -10,14 +10,24 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import re
 import threading
 from collections import OrderedDict
-from collections.abc import Callable
-from typing import Any, Literal
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel
 
-from athena.security import redact_secrets, redact_sensitive_data
+from athena.security import (
+    AthenaValidationError,
+    redact_secrets,
+    redact_sensitive_data,
+)
+
+_T = TypeVar("_T")
+_EVIDENCE_ID_RE = re.compile(r"^ev_[0-9a-f]{64}$")
 
 EvidenceConfidence = Literal["observed", "derived", "inferred"]
 CompletenessStatus = Literal["complete", "partial", "unknown"]
@@ -156,13 +166,148 @@ class _RetainedEntry:
         self.completeness = completeness
 
 
-class EvidenceStore:
-    """Thread-safe LRU store for retained full analysis payloads with paged view inspection."""
+def paginate_items(
+    items: Sequence[_T],
+    *,
+    offset: int = 0,
+    limit: int | None = None,
+    max_limit: int = 500,
+    strict: bool = True,
+) -> tuple[list[_T], int, int | None, bool]:
+    """Slice a sequence safely with bounded limit and optional strict validation."""
+    if strict:
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise AthenaValidationError(
+                "INVALID_OFFSET",
+                f"offset must be a non-negative integer (got {offset!r}).",
+            )
+        if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0):
+            raise AthenaValidationError(
+                "INVALID_LIMIT",
+                f"limit must be a positive integer (got {limit!r}).",
+            )
+    else:
+        offset = max(0, int(offset))
+        if limit is not None:
+            limit = max(1, int(limit))
 
-    def __init__(self, max_entries: int = 32) -> None:
+    items_list = list(items)
+    total = len(items_list)
+    if limit is None:
+        sliced = items_list[offset:]
+        return sliced, total, None, False
+
+    effective_limit = min(limit, max_limit)
+    sliced = items_list[offset : offset + effective_limit]
+    has_more = (offset + len(sliced)) < total
+    return sliced, total, effective_limit, has_more
+
+
+class EvidenceStore:
+    """Thread-safe LRU store for retained full analysis payloads with optional disk persistence."""
+
+    def __init__(
+        self,
+        max_entries: int = 32,
+        *,
+        persist_dir: str | Path | None = None,
+        use_env_dir: bool = False,
+    ) -> None:
         self._max_entries = max(1, max_entries)
+        self._persist_dir = Path(persist_dir) if persist_dir is not None else None
+        self._use_env_dir = use_env_dir
         self._lock = threading.Lock()
         self._entries: OrderedDict[str, _RetainedEntry] = OrderedDict()
+
+    def _storage_dir(self) -> Path | None:
+        if self._persist_dir is not None:
+            return self._persist_dir
+        if not self._use_env_dir:
+            return None
+        override = os.environ.get("ATHENA_EVIDENCE_DIR", "").strip()
+        if override:
+            return Path(override)
+        return Path.home() / ".athena" / "evidence"
+
+    @staticmethod
+    def _entry_path(storage_dir: Path, evidence_id: str) -> Path | None:
+        if not _EVIDENCE_ID_RE.match(evidence_id):
+            return None
+        try:
+            root = storage_dir.resolve()
+            candidate = (root / f"{evidence_id}.json").resolve()
+            if candidate.parent != root or candidate.is_symlink():
+                return None
+            return candidate
+        except OSError:
+            return None
+
+    def _prune_disk_entries(self, storage_dir: Path) -> None:
+        try:
+            files = [p for p in storage_dir.glob("ev_*.json") if p.is_file() and not p.is_symlink()]
+            if len(files) <= self._max_entries:
+                return
+            files.sort(key=lambda p: (p.stat().st_mtime, p.name))
+            for stale in files[: len(files) - self._max_entries]:
+                stale.unlink(missing_ok=True)
+        except OSError:
+            return
+
+    def _persist_entry(self, entry: _RetainedEntry) -> None:
+        storage_dir = self._storage_dir()
+        if storage_dir is None:
+            return
+        try:
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            dest = self._entry_path(storage_dir, entry.evidence_id)
+            if dest is None:
+                return
+            envelope = {
+                "schema_version": "1.0",
+                "evidence_id": entry.evidence_id,
+                "kind": entry.kind,
+                "completeness": entry.completeness,
+                "payload": entry.payload,
+            }
+            raw = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+            tmp_path = dest.with_name(f".{dest.name}.{os.getpid()}.tmp")
+            tmp_path.write_text(raw, encoding="utf-8")
+            os.replace(tmp_path, dest)
+            self._prune_disk_entries(storage_dir)
+        except OSError:
+            return
+
+    def _load_from_disk(self, evidence_id: str) -> _RetainedEntry | None:
+        storage_dir = self._storage_dir()
+        if storage_dir is None:
+            return None
+        dest = self._entry_path(storage_dir, evidence_id)
+        if dest is None or not dest.is_file():
+            return None
+        try:
+            data = json.loads(dest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict) or data.get("evidence_id") != evidence_id:
+            return None
+        payload = data.get("payload")
+        kind = data.get("kind")
+        completeness = data.get("completeness", "unknown")
+        if not isinstance(payload, dict) or not isinstance(kind, str):
+            return None
+        if completeness not in {"complete", "partial", "unknown"}:
+            completeness = "unknown"
+        entry = _RetainedEntry(
+            evidence_id=evidence_id,
+            kind=kind,
+            payload=redact_sensitive_data(payload),
+            completeness=completeness,
+        )
+        try:
+            os.utime(dest, None)
+        except OSError:
+            pass
+        return entry
 
     def retain(
         self,
@@ -186,6 +331,7 @@ class EvidenceStore:
             self._entries[ev_id] = entry
             while len(self._entries) > self._max_entries:
                 self._entries.popitem(last=False)
+        self._persist_entry(entry)
 
         facets = [k for k, v in safe_payload.items() if isinstance(v, (list, dict))]
         if summary_builder is not None:
@@ -210,22 +356,55 @@ class EvidenceStore:
         return redact_sensitive_data(summary)
 
     def has(self, evidence_id: str) -> bool:
-        """Return True if an evidence bundle is retained in memory."""
+        """Return True if an evidence bundle is retained in memory or on disk."""
         with self._lock:
-            return evidence_id in self._entries
+            if evidence_id in self._entries:
+                return True
+        loaded = self._load_from_disk(evidence_id)
+        if loaded is None:
+            return False
+        with self._lock:
+            self._entries.pop(evidence_id, None)
+            self._entries[evidence_id] = loaded
+            while len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
+        return True
 
     def list_retained(self) -> list[dict[str, Any]]:
-        """List metadata for all currently retained evidence bundles."""
+        """List metadata for all currently retained evidence bundles (memory + disk)."""
+        seen: dict[str, dict[str, Any]] = {}
         with self._lock:
-            return [
-                {
+            for e in reversed(self._entries.values()):
+                seen[e.evidence_id] = {
                     "evidence_id": e.evidence_id,
                     "kind": e.kind,
                     "completeness": e.completeness,
                     "facets": [k for k, v in e.payload.items() if isinstance(v, (list, dict))],
                 }
-                for e in reversed(self._entries.values())
-            ]
+
+        storage_dir = self._storage_dir()
+        if storage_dir is not None and storage_dir.is_dir():
+            try:
+                files = sorted(
+                    (p for p in storage_dir.glob("ev_*.json") if p.is_file() and not p.is_symlink()),
+                    key=lambda p: (p.stat().st_mtime, p.name),
+                    reverse=True,
+                )
+            except OSError:
+                files = []
+            for p in files[: self._max_entries]:
+                ev_id = p.stem
+                if ev_id in seen or not _EVIDENCE_ID_RE.match(ev_id):
+                    continue
+                loaded = self._load_from_disk(ev_id)
+                if loaded is not None:
+                    seen[loaded.evidence_id] = {
+                        "evidence_id": loaded.evidence_id,
+                        "kind": loaded.kind,
+                        "completeness": loaded.completeness,
+                        "facets": [k for k, v in loaded.payload.items() if isinstance(v, (list, dict))],
+                    }
+        return list(seen.values())[: self._max_entries]
 
     def inspect_view(
         self,
@@ -236,9 +415,24 @@ class EvidenceStore:
         limit: int = 50,
     ) -> dict[str, Any]:
         """Page through a specific facet (list or dict) of a retained evidence bundle."""
-        offset = max(offset, 0)
-        limit = max(limit, 1)
-        limit = min(limit, 200)
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            return {
+                "status": "error",
+                "error_code": "INVALID_OFFSET",
+                "error_kind": "validation",
+                "retryable": False,
+                "error_message": f"offset must be a non-negative integer (got {offset!r}).",
+                "remediation_action": "Pass offset >= 0.",
+            }
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+            return {
+                "status": "error",
+                "error_code": "INVALID_LIMIT",
+                "error_kind": "validation",
+                "retryable": False,
+                "error_message": f"limit must be a positive integer (got {limit!r}).",
+                "remediation_action": "Pass limit between 1 and 200.",
+            }
 
         with self._lock:
             entry = self._entries.get(evidence_id)
@@ -246,13 +440,26 @@ class EvidenceStore:
                 self._entries.move_to_end(evidence_id)
 
         if entry is None:
+            loaded = self._load_from_disk(evidence_id)
+            if loaded is not None:
+                with self._lock:
+                    self._entries.pop(evidence_id, None)
+                    self._entries[evidence_id] = loaded
+                    while len(self._entries) > self._max_entries:
+                        self._entries.popitem(last=False)
+                entry = loaded
+
+        if entry is None:
             return {
                 "status": "error",
                 "error_code": "EVIDENCE_NOT_FOUND",
+                "error_kind": "not_found",
+                "retryable": True,
                 "error_message": (
                     f"No retained evidence found for '{evidence_id}'. "
                     "Run the analysis tool again with detail='summary' or detail='complete'."
                 ),
+                "remediation_action": "Run analyze, breaking-changes, or query_code_graph with detail='summary' first.",
             }
 
         if facet not in entry.payload:
@@ -260,40 +467,53 @@ class EvidenceStore:
             return {
                 "status": "error",
                 "error_code": "FACET_NOT_FOUND",
+                "error_kind": "invalid_input",
+                "retryable": False,
                 "error_message": f"Facet '{facet}' not found in '{evidence_id}'.",
                 "available_facets": available,
+                "remediation_action": f"Choose one of available_facets: {available}",
             }
 
         target = entry.payload[facet]
         if isinstance(target, list):
-            total = len(target)
-            items = target[offset : offset + limit]
+            items, total, effective_limit, has_more = paginate_items(
+                target,
+                offset=offset,
+                limit=limit,
+                max_limit=200,
+                strict=False,
+            )
             return {
                 "status": "ok",
                 "evidence_id": evidence_id,
                 "kind": entry.kind,
                 "completeness": entry.completeness,
                 "facet": facet,
-                "offset": offset,
-                "limit": limit,
+                "offset": max(0, int(offset)),
+                "limit": effective_limit,
                 "total": total,
-                "has_more": offset + len(items) < total,
+                "has_more": has_more,
                 "items": items,
             }
         if isinstance(target, dict):
             keys = sorted(target.keys())
-            total = len(keys)
-            sliced_keys = keys[offset : offset + limit]
+            sliced_keys, total, effective_limit, has_more = paginate_items(
+                keys,
+                offset=offset,
+                limit=limit,
+                max_limit=200,
+                strict=False,
+            )
             return {
                 "status": "ok",
                 "evidence_id": evidence_id,
                 "kind": entry.kind,
                 "completeness": entry.completeness,
                 "facet": facet,
-                "offset": offset,
-                "limit": limit,
+                "offset": max(0, int(offset)),
+                "limit": effective_limit,
                 "total": total,
-                "has_more": offset + len(sliced_keys) < total,
+                "has_more": has_more,
                 "items": {k: target[k] for k in sliced_keys},
             }
 
@@ -307,4 +527,4 @@ class EvidenceStore:
         }
 
 
-DEFAULT_EVIDENCE_STORE = EvidenceStore(max_entries=32)
+DEFAULT_EVIDENCE_STORE = EvidenceStore(max_entries=32, use_env_dir=True)

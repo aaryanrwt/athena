@@ -632,12 +632,22 @@ def read_blobs_at_revision(
 def _parse_unified_diff_by_file(diff_text: str) -> dict[str, tuple[list[ParsedHunk], int, int, bool]]:
     """Parse unified git diff output into per-file hunks, insertions, deletions, and binary flags."""
     results: dict[str, tuple[list[ParsedHunk], int, int, bool]] = {}
+    max_raw_hunk_chars = MAX_EVIDENCE_EXCERPT_CHARS + 1024
     for file_path, raw_hunks, ins_count, del_count, is_binary in parse_unified_diff_raw(diff_text):
         hunks: list[ParsedHunk] = []
+        total_joined_chars = 0
         for header, b_start, b_end, t_start, t_end, raw_lines in raw_hunks:
-            excerpt = redact_secrets(raw_lines)
-            if len(excerpt) > MAX_EVIDENCE_EXCERPT_CHARS:
-                excerpt = excerpt[:MAX_EVIDENCE_EXCERPT_CHARS] + "\n... [diff hunk truncated]"
+            if len(hunks) >= 6 and total_joined_chars > MAX_BOUNDED_DIFF_CHARS + 64:
+                excerpt = ""
+            else:
+                bounded_raw = (
+                    raw_lines
+                    if len(raw_lines) <= max_raw_hunk_chars
+                    else raw_lines[:max_raw_hunk_chars]
+                )
+                excerpt = redact_secrets(bounded_raw)
+                if len(excerpt) > MAX_EVIDENCE_EXCERPT_CHARS:
+                    excerpt = excerpt[:MAX_EVIDENCE_EXCERPT_CHARS] + "\n... [diff hunk truncated]"
             hunks.append(
                 ParsedHunk(
                     header=header,
@@ -646,6 +656,7 @@ def _parse_unified_diff_by_file(diff_text: str) -> dict[str, tuple[list[ParsedHu
                     excerpt=excerpt,
                 )
             )
+            total_joined_chars += len(header) + len(excerpt) + 2
         results[file_path] = (hunks, ins_count, del_count, is_binary)
     return results
 

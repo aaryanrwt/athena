@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0              # Athena needs history for base..head
           persist-credentials: false
-      - uses: aaryanrwt/athena@v1.3.1
+      - uses: aaryanrwt/athena@v1.3.2
 ```
 
 Inputs: `base`, `target`, `install-source` (`git` default, or `local` to install
@@ -63,7 +63,7 @@ user, and uses `athena` as the entrypoint.
 ```yaml
 repos:
   - repo: https://github.com/aaryanrwt/athena
-    rev: v1.3.1   # use the latest release tag
+    rev: v1.3.2   # use the latest release tag
     hooks:
       - id: athena-check
 ```
@@ -74,12 +74,12 @@ The hook runs `athena check --staged`.
 
 ### GitHub Release & Version Tagging
 
-1. Tag a release commit (for example `git tag v1.3.1 && git push origin v1.3.1`).
+1. Tag a release commit (for example `git tag v1.3.2 && git push origin v1.3.2`).
 2. Create a GitHub Release with release notes generated via `athena release-notes`.
 
 ### GitHub Marketplace listing
 
 1. Make sure `action.yml` is at the repository root and the repository is public.
-2. Tag a release (for example `v1.3.1`) and move a major tag (`v1`) to it.
+2. Tag a release (for example `v1.3.2`) and move a major tag (`v1`) to it.
 3. On the release page choose *Publish this Action to the GitHub Marketplace*,
    pick a category, and accept the Marketplace developer agreement.

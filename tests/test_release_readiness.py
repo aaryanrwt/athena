@@ -18,12 +18,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_and_docs_sync() -> None:
-    assert __version__ == "1.3.1"
-    assert 'version: "1.3.1"' in _HERMES_PLUGIN_YAML
+    assert __version__ == "1.3.2"
+    assert 'version: "1.3.2"' in _HERMES_PLUGIN_YAML
     changelog = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "## 1.3.1" in changelog
+    assert "## 1.3.2" in changelog
     readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "v1.3.1" in readme
+    assert "v1.3.2" in readme
     skill = (_REPO_ROOT / "skills" / "athena" / "SKILL.md").read_text(encoding="utf-8")
     assert "query_code_graph" in skill and "shortcut:" in skill
 
@@ -57,11 +57,11 @@ def test_completeness_never_defaults_to_complete_on_gaps() -> None:
 def test_utf8_bom_comment_fabrication_and_collision_regressions(tmp_path: Path) -> None:
     repo = tmp_path / "reg_repo"
     repo.mkdir()
-    # UTF-8 BOM + Python def + shortcut (ponytail #1455)
+    # UTF-8 BOM + Python def + shortcut marker binding
     (repo / "bom_mod.py").write_bytes(
         "\ufeffdef first_fn():\n    # shortcut: linear scan, upgrade at 10k rows\n    return 1\n".encode("utf-8")
     )
-    # TS file with comment-only fake function + two classes with same method name (graphify #5368, #5291)
+    # TS file with comment-only fake function + two functions sharing a name in the same file
     (repo / "edge.ts").write_text(
         "// export function fakeFromComment() {}\n"
         "/* function alsoFake() {} */\n"
@@ -82,7 +82,7 @@ def test_utf8_bom_comment_fabrication_and_collision_regressions(tmp_path: Path) 
     assert debt.total_shortcuts == 1
     assert debt.items[0].enclosing_symbol == "first_fn"
 
-    # Exact ID resolution in get_neighbors & get_community (graphify #5343)
+    # Exact ID resolution in get_neighbors & get_community
     nb = get_neighbors(cg, "mod:bom_mod.py")
     assert nb["status"] == "ok" and any(x["label"] == "first_fn" for x in nb["neighbors"])
     comm = get_community(cg, 0)

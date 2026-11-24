@@ -5,16 +5,26 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
+import subprocess
 import sys
+from importlib import metadata as importlib_metadata
+from pathlib import Path
 
 from athena import __version__
+from athena.evidence_store import DEFAULT_EVIDENCE_STORE
 from athena.gates import check_staged, semver_check
 from athena.html_report import render_html_report
 from athena.mcp_server import (
+    VALID_TOOLSETS,
+    VALID_TRANSPORTS,
     analyze_git_history,
     detect_potential_breaking_changes,
     generate_release_notes,
+    get_rust_acceleration_status,
     inspect_repository,
+    mcp_app,
+    run_mcp_server,
     run_mcp_stdio_server,
 )
 from athena.mcp_config import render_mcp_config, write_mcp_config
@@ -27,6 +37,81 @@ from athena.security import (
 )
 from athena.symbol_cache import configure_cache
 from athena.tui import run_interactive_ui
+
+
+def _print_error(code: str, message: str, *, exit_code: int = 2) -> int:
+    print(json.dumps({"status": "error", "error_code": code, "error_message": message}, indent=2))
+    return exit_code
+
+
+def _run_doctor(repo_path: str, cache_dir: str | None) -> dict[str, object]:
+    """Collect real runtime diagnostics for Python, Git, MCP SDK, Rust kernels, and repo state."""
+    git_version = ""
+    git_ok = False
+    try:
+        proc = subprocess.run(["git", "--version"], capture_output=True, text=True, check=False, timeout=5)
+        if proc.returncode == 0:
+            git_ok = True
+            git_version = proc.stdout.strip()
+    except OSError:
+        git_ok = False
+
+    try:
+        mcp_sdk_version = importlib_metadata.version("mcp")
+    except importlib_metadata.PackageNotFoundError:
+        mcp_sdk_version = "missing"
+
+    rust_status = get_rust_acceleration_status()
+    ev_dir = DEFAULT_EVIDENCE_STORE._storage_dir()
+    ev_dir_writable = False
+    if ev_dir is not None:
+        try:
+            ev_dir.mkdir(parents=True, exist_ok=True)
+            ev_dir_writable = os.access(ev_dir, os.W_OK)
+        except OSError:
+            ev_dir_writable = False
+
+    repo_diag = inspect_repository(repo_path=repo_path, max_recent_commits=1)
+    graph_file_exists = False
+    if repo_diag.get("is_valid_git_repo") and repo_diag.get("repo_root"):
+        graph_file_exists = (Path(str(repo_diag["repo_root"])) / ".athena" / "graph.json").is_file()
+
+    runtime_ok = sys.version_info >= (3, 12) and git_ok and mcp_sdk_version != "missing"
+    return {
+        "status": "ok" if runtime_ok else "error",
+        "athena_version": __version__,
+        "python": {
+            "version": platform.python_version(),
+            "executable": sys.executable,
+            "supported": sys.version_info >= (3, 12),
+        },
+        "git": {
+            "available": git_ok,
+            "version": git_version or "unavailable",
+        },
+        "mcp": {
+            "sdk_version": mcp_sdk_version,
+            "registered_tools": len(getattr(mcp_app, "_athena_registered_tools", ())),
+            "valid_toolsets": list(VALID_TOOLSETS),
+            "transports": list(VALID_TRANSPORTS),
+        },
+        "rust_acceleration": rust_status,
+        "evidence_store": {
+            "directory": str(ev_dir) if ev_dir is not None else None,
+            "writable": ev_dir_writable,
+            "retained_count": len(DEFAULT_EVIDENCE_STORE.list_retained()),
+        },
+        "symbol_cache": {
+            "cache_dir": cache_dir,
+            "enabled": bool(cache_dir),
+        },
+        "repository": {
+            "input_path": repo_path,
+            "is_valid_git_repo": bool(repo_diag.get("is_valid_git_repo")),
+            "branch": repo_diag.get("current_branch"),
+            "graph_index_present": graph_file_exists,
+        },
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -54,7 +139,30 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command")
 
     # mcp server command (default if no subcommand or 'mcp')
-    sub.add_parser("mcp", help="Run the Athena MCP server over stdio")
+    p_mcp = sub.add_parser("mcp", help="Run the Athena MCP server (stdio or local streamable-http)")
+    p_mcp.add_argument(
+        "--transport",
+        choices=list(VALID_TRANSPORTS),
+        default="stdio",
+        help="MCP transport mode: stdio (default) or streamable-http",
+    )
+    p_mcp.add_argument("--host", default="127.0.0.1", help="Bind host for streamable-http (default: 127.0.0.1)")
+    p_mcp.add_argument("--port", type=int, default=8765, help="Bind port for streamable-http (default: 8765)")
+    p_mcp.add_argument(
+        "--toolsets",
+        default=None,
+        help=f"Comma-separated MCP toolsets to expose ({', '.join(VALID_TOOLSETS)}, or all)",
+    )
+    p_mcp.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Expose only read-only MCP tools (excludes file-writing release note tools)",
+    )
+    p_mcp.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Allow non-loopback streamable-http binding (use with caution)",
+    )
 
     # interactive terminal UI command
     p_ui = sub.add_parser("ui", help="Launch the interactive Athena Studio Terminal UI")
@@ -73,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     p_analyze.add_argument("--base", default="AUTO", help="Base revision (tag, branch, SHA, or AUTO)")
     p_analyze.add_argument("--target", default="HEAD", help="Target revision (HEAD, tag, branch, or WORKING_TREE)")
     p_analyze.add_argument("--max-commits", type=int, default=100, help="Maximum commits to inspect (1..500)")
+    p_analyze.add_argument("--detail", choices=["complete", "summary"], default="complete", help="Response detail level (summary retains ev_<sha256> on disk for athena view)")
     p_analyze.add_argument("--llm", action="store_true", help="Enable optional local LLM (qwen2.5-coder:7b / gemma:latest) enhancement")
     p_analyze.add_argument("--no-llm", action="store_true", help="Force deterministic AST/diff mode (default)")
     p_analyze.add_argument("--model", default=DEFAULT_OLLAMA_MODEL, help="Local Ollama model tag (e.g. qwen2.5-coder:7b, gemma:latest)")
@@ -83,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     p_brk.add_argument("--base", default="AUTO", help="Base revision (tag, branch, SHA, or AUTO)")
     p_brk.add_argument("--target", default="HEAD", help="Target revision (HEAD, tag, branch, or WORKING_TREE)")
     p_brk.add_argument("--include-low-confidence", action="store_true", help="Include low-confidence findings")
+    p_brk.add_argument("--detail", choices=["complete", "summary"], default="complete", help="Response detail level (summary retains ev_<sha256> on disk for athena view)")
     p_brk.add_argument("--llm", action="store_true", help="Enable optional local LLM (qwen2.5-coder:7b / gemma:latest) enhancement")
     p_brk.add_argument("--no-llm", action="store_true", help="Force deterministic AST/diff mode (default)")
     p_brk.add_argument("--model", default=DEFAULT_OLLAMA_MODEL, help="Local Ollama model tag (e.g. qwen2.5-coder:7b, gemma:latest)")
@@ -147,7 +257,7 @@ def main(argv: list[str] | None = None) -> int:
     p_sem.add_argument("--target", default="HEAD", help="Target revision (HEAD, tag, branch, or WORKING_TREE)")
     p_sem.add_argument("--declared", required=True, choices=["major", "minor", "patch"], help="Declared bump")
 
-    # graph command (v1.3.0)
+    # graph command
     p_graph = sub.add_parser("graph", help="Build or query Athena's persistent code knowledge graph")
     p_graph.add_argument("repo_path", nargs="?", default=".", help="Path to local repository (default: .)")
     p_graph.add_argument("--query", default="", help="Search query for trigram+IDF + hub-guarded BFS")
@@ -156,19 +266,22 @@ def main(argv: list[str] | None = None) -> int:
     p_graph.add_argument("--god-nodes", action="store_true", help="List top architectural hub nodes")
     p_graph.add_argument("--path", nargs=2, metavar=("SRC", "DST"), help="Find shortest path between two symbols")
     p_graph.add_argument("--rebuild", action="store_true", help="Force graph rebuild")
+    p_graph.add_argument("--detail", choices=["complete", "summary"], default="complete", help="Response detail level (summary retains ev_<sha256> on disk for athena view)")
 
-    # map command (v1.3.0)
+    # map command
     p_map = sub.add_parser("map", help="Emit a <=2000-char zero-search architectural export map")
     p_map.add_argument("repo_path", nargs="?", default=".", help="Path to local repository (default: .)")
     p_map.add_argument("--max-chars", type=int, default=2000, help="Maximum output characters (default: 2000)")
     p_map.add_argument("--json", action="store_true", help="Output full JSON metadata")
 
-    # debt command (v1.3.0)
+    # debt command
     p_debt = sub.add_parser("debt", help="Scan for `shortcut:` technical debt markers bound to AST symbols")
     p_debt.add_argument("repo_path", nargs="?", default=".", help="Path to local repository (default: .)")
     p_debt.add_argument("--include-todos", action="store_true", help="Also include TODO/FIXME markers")
+    p_debt.add_argument("--offset", type=int, default=0, help="Start item offset (default: 0)")
+    p_debt.add_argument("--limit", type=int, default=None, help="Maximum items to return (1..500)")
 
-    # install command (v1.3.0)
+    # install command
     p_inst = sub.add_parser("install", help="Transactionally install Athena skills/hooks for AI coding agents")
     p_inst.add_argument(
         "--agent",
@@ -179,18 +292,24 @@ def main(argv: list[str] | None = None) -> int:
     p_inst.add_argument("--target", default=".", help="Target project/workspace directory (default: .)")
     p_inst.add_argument("--dry-run", action="store_true", help="Preview installation plan without writing files")
 
-    # view command (v1.3.0)
+    # view command
     p_view = sub.add_parser("view", help="Page through a retained evidence bundle by ID and facet")
     p_view.add_argument("evidence_id", help="Retained evidence ID (ev_<sha256>)")
     p_view.add_argument("--facet", required=True, help="Facet name to inspect")
     p_view.add_argument("--offset", type=int, default=0, help="Start offset")
     p_view.add_argument("--limit", type=int, default=50, help="Page size")
 
-    # affected-tests command (v1.3.1)
+    # affected-tests command
     p_tests = sub.add_parser("affected-tests", help="Predict pytest/Playwright/unit tests impacted by git diff")
     p_tests.add_argument("repo_path", nargs="?", default=".", help="Path to local Git repository (default: .)")
     p_tests.add_argument("--base", default="AUTO", help="Base revision (tag, branch, SHA, or AUTO)")
     p_tests.add_argument("--target", default="HEAD", help="Target revision (HEAD, tag, branch, or WORKING_TREE)")
+    p_tests.add_argument("--offset", type=int, default=0, help="Start item offset (default: 0)")
+    p_tests.add_argument("--limit", type=int, default=None, help="Maximum tests to return (1..500)")
+
+    # doctor command (v1.3.2)
+    p_doc = sub.add_parser("doctor", help="Check Python, Git, MCP SDK, Rust kernel, cache, and repo readiness")
+    p_doc.add_argument("repo_path", nargs="?", default=".", help="Optional local repository path to inspect (default: .)")
 
     args = parser.parse_args(argv)
 
@@ -218,8 +337,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "mcp":
-        run_mcp_stdio_server()
-        return 0
+        try:
+            run_mcp_server(
+                transport=args.transport,
+                host=args.host,
+                port=args.port,
+                toolsets=args.toolsets,
+                read_only=args.read_only,
+                allow_remote=args.allow_remote,
+            )
+            return 0
+        except AthenaValidationError as exc:
+            return _print_error(exc.code, exc.message, exit_code=2)
 
     if args.command == "inspect":
         res = inspect_repository(repo_path=args.repo_path, max_recent_commits=args.max_commits)
@@ -234,11 +363,18 @@ def main(argv: list[str] | None = None) -> int:
             max_commits=args.max_commits,
             use_llm=_resolve_use_llm(args),
             ollama_model=args.model,
+            detail=args.detail,
         )
         print(json.dumps(res, indent=2))
         return 0 if res.get("status") == "ok" else 1
 
     if args.command == "breaking-changes":
+        if args.format == "sarif" and args.detail == "summary":
+            return _print_error(
+                "INCOMPATIBLE_OPTIONS",
+                "--format sarif requires complete findings; omit --detail summary when exporting SARIF.",
+                exit_code=2,
+            )
         res = detect_potential_breaking_changes(
             repo_path=args.repo_path,
             base_ref=args.base,
@@ -246,6 +382,7 @@ def main(argv: list[str] | None = None) -> int:
             include_low_confidence=args.include_low_confidence,
             use_llm=_resolve_use_llm(args),
             ollama_model=args.model,
+            detail=args.detail,
         )
         if args.format == "sarif" and res.get("status") == "ok":
             print(json.dumps(breaking_report_to_sarif(res), indent=2))
@@ -354,36 +491,47 @@ def main(argv: list[str] | None = None) -> int:
                 out = query_code_graph(cg, args.query, depth=args.depth, token_budget=args.token_budget)
             else:
                 out = get_graph_stats(cg)
+            if args.detail == "summary" and out.get("status") == "ok":
+                out = DEFAULT_EVIDENCE_STORE.retain(
+                    "code_graph_query",
+                    out,
+                    completeness=cg.completeness,
+                )
             print(json.dumps(out, indent=2))
             return 0 if out.get("status") == "ok" else 1
         except AthenaValidationError as exc:
-            print(json.dumps({"status": "error", "error_code": exc.code, "error_message": exc.message}, indent=2))
-            return 2
+            return _print_error(exc.code, exc.message, exit_code=2)
 
     if args.command == "map":
         from athena.repo_map import build_repo_map
 
         try:
             res = build_repo_map(args.repo_path, max_chars=args.max_chars)
+            if res.get("status") != "ok":
+                print(json.dumps(res, indent=2))
+                return 1
             if args.json:
                 print(json.dumps(res, indent=2))
             else:
                 print(res["map_text"])
             return 0
         except AthenaValidationError as exc:
-            print(json.dumps({"status": "error", "error_code": exc.code, "error_message": exc.message}, indent=2))
-            return 2
+            return _print_error(exc.code, exc.message, exit_code=2)
 
     if args.command == "debt":
         from athena.debt_tracker import scan_shortcut_debt
 
         try:
-            res = scan_shortcut_debt(args.repo_path, include_todos=args.include_todos).model_dump(mode="json")
+            res = scan_shortcut_debt(
+                args.repo_path,
+                include_todos=args.include_todos,
+                offset=args.offset,
+                limit=args.limit,
+            ).model_dump(mode="json")
             print(json.dumps(res, indent=2))
-            return 0
+            return 0 if res.get("status") == "ok" else 1
         except AthenaValidationError as exc:
-            print(json.dumps({"status": "error", "error_code": exc.code, "error_message": exc.message}, indent=2))
-            return 2
+            return _print_error(exc.code, exc.message, exit_code=2)
 
     if args.command == "install":
         from athena.agent_installer import install_agent_integration
@@ -393,8 +541,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if res.get("status") == "ok" else 1
 
     if args.command == "view":
-        from athena.evidence_store import DEFAULT_EVIDENCE_STORE
-
         res = DEFAULT_EVIDENCE_STORE.inspect_view(args.evidence_id, args.facet, offset=args.offset, limit=args.limit)
         print(json.dumps(res, indent=2))
         return 0 if res.get("status") == "ok" else 1
@@ -403,12 +549,22 @@ def main(argv: list[str] | None = None) -> int:
         from athena.test_selector import predict_affected_tests
 
         try:
-            res = predict_affected_tests(args.repo_path, base_ref=args.base, target_ref=args.target)
+            res = predict_affected_tests(
+                args.repo_path,
+                base_ref=args.base,
+                target_ref=args.target,
+                offset=args.offset,
+                limit=args.limit,
+            )
             print(json.dumps(res, indent=2))
-            return 0
+            return 0 if res.get("status") == "ok" else 1
         except AthenaValidationError as exc:
-            print(json.dumps({"status": "error", "error_code": exc.code, "error_message": exc.message}, indent=2))
-            return 2
+            return _print_error(exc.code, exc.message, exit_code=2)
+
+    if args.command == "doctor":
+        diag = _run_doctor(args.repo_path, cache_dir)
+        print(json.dumps(diag, indent=2))
+        return 0 if diag.get("status") == "ok" else 1
 
     return 0
 

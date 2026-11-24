@@ -1620,6 +1620,9 @@ def _detect_py_dynamic_calls(
 _TS_DYNAMIC_DISPATCH_RE = re.compile(
     r"(?:\b(?:eval|Reflect\.apply)\s*\(|[A-Za-z0-9_$)\]]+\[\s*[A-Za-z_$][A-Za-z0-9_$.]*\s*\]\s*\()"
 )
+_PY_DYN_PRE_RE = re.compile(
+    r"getattr|hasattr|setattr|\beval\b|\bexec\b|__import__|import_module|globals|locals|__dict__|registry|handlers|dispatch"
+)
 
 
 def _count_call_args_in_text(line: str, func_name: str) -> int | None:
@@ -1714,6 +1717,15 @@ def _scan_callers_and_tests_and_docs(
         if breaking_qnames_by_short
         else None
     )
+    _breaking_ident_re = (
+        re.compile(rf"\b({'|'.join(re.escape(k) for k in breaking_qnames_by_short)})\b")
+        if breaking_qnames_by_short
+        else None
+    )
+    _doc_call_res = {
+        k: re.compile(rf"\b{re.escape(k)}\s*\(")
+        for k in breaking_qnames_by_short
+    }
 
     scan_paths = eligible_scan_files[:max_scan_files]
     batch_target_blobs: dict[str, str] = {}
@@ -1769,13 +1781,13 @@ def _scan_callers_and_tests_and_docs(
                 line_map = _build_line_to_enclosing_symbol(tree)
 
                 # Scan for dynamic dispatch / reflection calls in non-test files
-                if not is_test and len(unresolved_dynamic_calls) < 25:
+                if not is_test and len(unresolved_dynamic_calls) < 25 and _PY_DYN_PRE_RE.search(content):
                     dyn_found = _detect_py_dynamic_calls(
                         tree, lines, rel_path, line_map, breaking_short_names
                     )
                     unresolved_dynamic_calls.extend(dyn_found[: 25 - len(unresolved_dynamic_calls)])
 
-                if breaking_qnames_by_short:
+                if _breaking_ident_re is not None and _breaking_ident_re.search(content):
                     file_imports = _extract_py_imports(tree)
                     for node in ast.walk(tree):
                         if isinstance(node, ast.Call):
@@ -1896,8 +1908,13 @@ def _scan_callers_and_tests_and_docs(
                                 )
 
         elif is_md and breaking_qnames_by_short:
-            lines = content.splitlines()
+            lines: list[str] | None = None
             for short_n, qnames in breaking_qnames_by_short.items():
+                if short_n not in content:
+                    continue
+                if lines is None:
+                    lines = content.splitlines()
+                call_pat = _doc_call_res[short_n]
                 for qname in qnames:
                     sc_obj = breaking_by_qname[qname]
                     target_py_sym = new_py_map.get(qname)
@@ -1911,7 +1928,9 @@ def _scan_callers_and_tests_and_docs(
                         else None
                     )
                     for idx, line in enumerate(lines, start=1):
-                        has_call = bool(re.search(rf"\b{re.escape(short_n)}\s*\(", line))
+                        if short_n not in line:
+                            continue
+                        has_call = bool(call_pat.search(line))
                         has_backtick = f"`{short_n}`" in line or f"`{qname}`" in line
                         if not (has_call or has_backtick):
                             continue
@@ -2125,6 +2144,12 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
     init_reexports = _collect_init_reexports(extraction)
 
     next_ev_num = len(extraction.evidence_registry) + 1
+    commit_by_file: dict[str, tuple[str, str]] = {}
+    for c in extraction.commits:
+        for cf in c.changed_files:
+            norm_cf = cf.replace("\\", "/")
+            if norm_cf not in commit_by_file:
+                commit_by_file[norm_cf] = (c.commit_hash, c.subject)
 
     def _register_symbol_evidence(
         file_delta_path: str,
@@ -2136,16 +2161,18 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
         nonlocal next_ev_num
         eid = f"ev_{next_ev_num:03d}"
         next_ev_num += 1
-        c_hash = extraction.resolved_target_sha
-        c_msg = "Working tree or revision diff"
-        for c in extraction.commits:
-            if file_delta_path in [f.replace("\\", "/") for f in c.changed_files]:
-                c_hash = c.commit_hash
-                c_msg = c.subject
-                break
-        if c_hash == "WORKING_TREE" and extraction.commits:
-            c_hash = extraction.commits[0].commit_hash
-            c_msg = extraction.commits[0].subject
+        norm_delta = file_delta_path.replace("\\", "/")
+        default_hash = (
+            extraction.commits[0].commit_hash
+            if extraction.resolved_target_sha == "WORKING_TREE" and extraction.commits
+            else extraction.resolved_target_sha
+        )
+        default_msg = (
+            extraction.commits[0].subject
+            if extraction.resolved_target_sha == "WORKING_TREE" and extraction.commits
+            else "Working tree or revision diff"
+        )
+        c_hash, c_msg = commit_by_file.get(norm_delta, (default_hash, default_msg))
         extraction.evidence_registry[eid] = EvidenceRecord(
             evidence_id=eid,
             commit_hash=c_hash,

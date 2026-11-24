@@ -339,18 +339,18 @@ Builds/queries `.athena/graph.json` with trigram+IDF scoring, hub-guarded BFS, d
 ### 14. Predictive Test Selection (`v1.3.1+`)
 
 ```bash
-athena affected-tests . --base main --target HEAD
+athena affected-tests . --base main --target HEAD --offset 0 --limit 25
 ```
 
-Maps changed symbols and callers directly to impacted `pytest`, Playwright (`.spec.ts`/`.e2e.ts`), and unit test files.
+Maps changed symbols and callers directly to impacted `pytest`, Playwright (`.spec.ts`/`.e2e.ts`), and unit test files, with bounded pagination (`has_more`, `partial`).
 
 ### 15. Technical Debt Ledger (`v1.3.0+`)
 
 ```bash
-athena debt .
+athena debt . --offset 0 --limit 25
 ```
 
-Finds `# shortcut: <limit>, <when to upgrade>` markers bound to enclosing AST symbols.
+Finds `# shortcut: <limit>, <when to upgrade>` markers bound to enclosing AST symbols, with bounded pagination.
 
 ### 16. Agent Setup Installer (`v1.3.0+`)
 
@@ -368,3 +368,20 @@ FAST_ANYTHING_DISABLE=1 athena graph . --query "auth"
 ```
 
 Builds `.fast/ports/*` PyO3 extensions into `.fast/lib/` (transparently falls back to pure Python when unbuilt or when `FAST_ANYTHING_DISABLE=1` is set).
+
+### 18. Cross-Process Evidence Paging, Scoped MCP Server & Diagnostics (`v1.3.2+`)
+
+```bash
+# Verify live Python, Git, MCP SDK, Rust kernel, evidence store, and repo state
+athena doctor .
+
+# Retain summary evidence on disk and page facets from another terminal session
+athena breaking-changes . --base main --target HEAD --detail summary
+athena view <ev_id> --facet potential_breaking_changes --offset 0 --limit 25
+
+# Run a read-only scoped MCP server over stdio or loopback streamable-http
+athena mcp --toolsets git,graph,analysis,testing,evidence --read-only
+athena mcp --transport streamable-http --host 127.0.0.1 --port 8765 --read-only
+```
+
+Persists `ev_<sha256>` evidence bundles atomically under `~/.athena/evidence` (or `$ATHENA_EVIDENCE_DIR`) and exposes MCP Resources (`athena://server/capabilities`, `athena://repo/map`, `athena://evidence/recent`, `athena://evidence/{evidence_id}`) and Guided Prompts (`pre_merge_audit`, `release_readiness_review`, `codebase_onboarding`).

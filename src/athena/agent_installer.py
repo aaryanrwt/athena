@@ -1,8 +1,8 @@
 """Transactional Cross-Agent Plugin, Hook & Skill Installer (`athena install`).
 
-Distills `rea setup`'s transactional backup/readback safety with `ponytail` +
-`graphify` multi-agent integrations (Hermes, OpenClaw, Claude Code, Codex,
-Cursor, Pi), using session-scoped state and direct script invocation.
+Provides SHA-256 backup and readback verification across Hermes, OpenClaw,
+Claude Code, Codex, Cursor, and Pi, using session-scoped state and direct
+script invocation.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ description: Local-first evidence-backed code knowledge graph, breaking-change A
 """
 
 _HERMES_PLUGIN_YAML = """name: athena
-version: "1.3.1"
+version: "1.3.2"
 description: "Athena local-first code graph, repo map, and breaking-change guard for Hermes."
 entry: "__init__.py"
 hooks:
@@ -276,7 +276,7 @@ def install_agent_integration(
         tmp_path.write_text(content, encoding="utf-8")
         os.replace(tmp_path, dest)
 
-        # Readback verification (rea setup pattern)
+        # Readback verification before reporting installation success
         if dest.read_text(encoding="utf-8") != content:
             return {
                 "status": "error",

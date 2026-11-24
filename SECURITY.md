@@ -25,7 +25,8 @@ Athena is designed as a **local-first** MCP server and CLI. Analysis tools are r
 - **Revision Isolation**: Committed targets are read from their resolved Git object IDs. Filesystem content is used only for an explicit `WORKING_TREE` target.
 - **Complete Output Redaction**: Serialized reports and generated Markdown are recursively redacted, including AST-derived signatures and caller snippets.
 - **Failure-Path Redaction**: MCP and Ollama error details redact provider tokens, authorization values, and credentials embedded in service URLs before serialization.
-- **Safe Explicit Writes**: Release output rejects Git metadata paths, uses exclusive creation by default, and uses atomic replacement for approved overwrites.
+- **Safe Explicit Writes & Evidence Persistence**: Release output rejects Git metadata paths, uses exclusive creation by default, and uses atomic replacement for approved overwrites. `EvidenceStore` (`v1.3.2+`) validates strict canonical IDs (`^ev_[0-9a-f]{64}$`) and confines atomic JSON persistence to `~/.athena/evidence` or `$ATHENA_EVIDENCE_DIR` (preventing path traversal and symlinks).
+- **Loopback-Guarded HTTP MCP Transport (`v1.3.2+`)**: `athena mcp --transport streamable-http` restricts binding to loopback hosts (`127.0.0.1`, `localhost`, `::1`) by default and rejects non-loopback hosts with `REMOTE_BIND_BLOCKED` unless `--allow-remote` is explicitly passed.
 - **Hardened CI Supply Chain**: GitHub Actions are pinned to reviewed commit SHAs. CI audits installed dependencies, builds a wheel, and publishes a CycloneDX SBOM with the package artifacts.
 
 ## Residual Security Boundaries

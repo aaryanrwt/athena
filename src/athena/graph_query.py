@@ -1,7 +1,7 @@
 """Zero-Vector-DB Graph Query Engine: Trigram + IDF Scoring & Hub-Guarded BFS.
 
-Distills `graphify/serve.py` & `analyze.py` with strict token-budgeting,
-non-test god-node filtering, and shortest-path traversal.
+Token-budgeted subgraph traversal, non-test god-node filtering, community
+inspection, and shortest-path queries.
 """
 
 from __future__ import annotations

@@ -28,7 +28,7 @@
 Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP server). It runs offline on your machine—no cloud APIs or vector databases required—to help both developers and AI coding agents:
 
 1. **Catch breaking changes before you merge** (renamed/removed symbols, parameter shifts, unguarded `None` defaults, unit-shift hints, recursion bugs, and broken callers).
-2. **Map and query any codebase in seconds** (`athena graph` & `athena map`), cutting agent token usage by **49x–3,025x** on real repositories.
+2. **Map and query any codebase in seconds** (`athena graph` & `athena map`), cutting agent token usage by **49x–81,438x** on real repositories.
 3. **Predict affected tests & track technical debt** (`athena affected-tests` for pytest/Playwright + `athena debt` for `# shortcut:` markers).
 4. **Plug into any AI coding agent** (`athena install`)—Hermes, OpenClaw, Claude Code, Codex, Cursor, and Pi—with safe, backed-up configs and optional **Hybrid Rust acceleration**.
 
@@ -38,6 +38,7 @@ Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP se
 - [Everyday Commands](#everyday-commands)
 - [How It Works](#how-it-works)
 - [Project & Folder Architecture](#project--folder-architecture)
+- [v1.3.2 5-Company Benchmark & v1.3.1 Comparison](#v132-5-company-benchmark--v131-comparison)
 - [Real-World Benchmark (v1.3.1)](#real-world-benchmark-v131)
 - [Before vs. After Rust Integration](#before-vs-after-rust-integration)
 - [Use It in GitHub Actions](#use-it-in-github-actions)
@@ -70,12 +71,15 @@ athena check --staged
 | Command | What it does |
 | :--- | :--- |
 | `athena ui` | Launches the interactive terminal studio (auto-starts when run in a terminal). |
+| `athena doctor .` | Checks live Python, Git, MCP SDK, Rust acceleration, evidence store, and repo state. |
+| `athena mcp --toolsets git,graph --read-only` | Runs Athena's MCP server (`stdio` or loopback `streamable-http`) with toolset/read-only scoping, resources, and workflow prompts. |
 | `athena map .` | Prints a `<=2000`-character export map of shared modules and symbols. |
 | `athena graph . --query "auth"` | Builds/queries `.athena/graph.json` with trigram search + hub-guarded BFS. |
-| `athena breaking-changes . --base main --target HEAD` | Finds potential breaking API changes, caller impact, and doc drift. |
+| `athena breaking-changes . --base main --target HEAD` | Finds potential breaking API changes, caller impact, and doc drift (`--detail summary` retains `ev_<sha256>` on disk). |
+| `athena view <ev_id> --facet potential_breaking_changes` | Pages through retained `ev_<sha256>` evidence bundles across CLI/MCP sessions. |
 | `athena check --staged` | Pre-commit gate: exits non-zero if staged changes break public APIs. |
-| `athena affected-tests .` | Predicts pytest, Playwright `.spec.ts`, and unit tests impacted by a diff. |
-| `athena debt .` | Lists `shortcut: <limit>, <when to upgrade>` debt markers with AST symbols. |
+| `athena affected-tests .` | Predicts pytest, Playwright `.spec.ts`, and unit tests impacted by a diff (supports `--offset`/`--limit`). |
+| `athena debt .` | Lists `shortcut: <limit>, <when to upgrade>` debt markers with AST symbols (supports `--offset`/`--limit`). |
 | `athena install --agent hermes` | Installs Athena skills/hooks for `hermes`, `openclaw`, `claude-code`, `codex`, `cursor`, or `pi`. |
 | `athena init-mcp cursor` | Generates ready-to-paste MCP config JSON (`claude-desktop`, `cursor`, `vscode`). |
 
@@ -95,7 +99,7 @@ flowchart LR
 
 - **Zero-LLM by default:** Everything runs deterministically offline. Local Ollama (`qwen2.5-coder:7b` / `gemma:latest`) is strictly optional (`--llm`).
 - **Never fakes completeness:** Unresolved dynamic calls (`getattr`, `eval`, oversized files) are tracked explicitly as `ResidualUnknown` (`unk_<sha256>`) records instead of being hidden.
-- **Context-friendly MCP:** Heavy tools support `detail="summary"` and return a `parent_evidence_id` that agents can page through with `inspect_analysis_view`.
+- **Context-friendly & 2026 MCP native:** Heavy tools support `detail="summary"` with cross-process disk-backed `ev_<sha256>` paging (`inspect_analysis_view` / `athena view`), while `athena mcp` exposes 4 read-only Resources/Templates (`athena://server/capabilities`, `athena://repo/map`, `athena://evidence/recent`, `athena://evidence/{evidence_id}`), 3 guided workflow prompts, `--toolsets`/`--read-only` scoping, and loopback-guarded `streamable-http` transport.
 
 ---
 
@@ -104,9 +108,9 @@ flowchart LR
 ```text
 athena/
 ├── src/athena/
-│   ├── cli.py                # CLI entry point (ui, mcp, graph, map, affected-tests, debt, install, check, report, semver-check)
+│   ├── cli.py                # CLI entry point (ui, doctor, mcp, graph, map, view, affected-tests, debt, install, check, report, semver-check)
 │   ├── tui.py                # Interactive Athena Studio Terminal UI
-│   ├── mcp_server.py         # 13-tool stdio MCP server with ToolAnnotations & hot/cold discovery
+│   ├── mcp_server.py         # Scoped stdio / loopback streamable-http MCP server (13 tools, resources, URI templates & prompts)
 │   ├── git_inspector.py      # Safe git diff & batched cat-file extractor (GIT_NO_LAZY_FETCH=1, TOCTOU drift guard)
 │   ├── ast_analyzer.py       # Python ast contract/unit-shift/recursion differ + 14-language structural scanner
 │   ├── graph_store.py        # Persistent .athena/graph.json builder, TS barrel/PHP/CUDA/TeX graph & atomic snapshots
@@ -135,6 +139,23 @@ athena/
 ├── Dockerfile                # Rootless container image
 └── pyproject.toml            # Package & Python 3.12-3.15 metadata
 ```
+
+---
+
+## v1.3.2 5-Company Benchmark & v1.3.1 Comparison
+
+Tested offline across **5 fresh enterprise repositories** over **`1,050–1,091` commits** each (`5,291` total commits, `63.8M` raw tokens / `255.2 MB`, `8,798` scanned files, `60,693` nodes, `192,208` edges, `366` breaking findings, `2,180` predicted tests):
+
+| Company & Repo | Span (`HEAD~1050..HEAD`) | Breaking Changes (`v1.3.1 -> v1.3.2 Py -> v1.3.2 Rust`) | `--detail summary` Payload | Token Reduction (`Map / Query`) | Cross-Process `view` & Parity |
+| :--- | :--- | ---: | ---: | ---: | :--- |
+| **Google** (`google/go-github`) | `1,050` commits (Go) | `133.26s -> 24.45s ->` **`22.15s (6.02x)`** | `4.02 MB -> 644 B` | **`5,103.0x`** / `1,333.8x` | `rc=1 -> rc=0` · `111==111==111` |
+| **Apple** (`ml-explore/mlx`) | `1,050` commits (C++/Py) | `176.68s -> 12.21s ->` **`11.12s (15.89x)`** | `3.13 MB -> 644 B` | **`6,026.7x`** / `2,321.5x` | `rc=1 -> rc=0` · `39==39==39` |
+| **OpenAI** (`openai/openai-python`) | `1,091` commits (Py) | `284.69s -> 31.45s ->` **`30.98s (9.19x)`** | `6.33 MB -> 646 B` | **`11,246.0x`** / `2,910.4x` | `rc=1 -> rc=0` · `132==132==132` |
+| **Meta** (`meta-llama/llama-stack`) | `1,050` commits (Py/TS) | `TIMEOUT 300.14s -> 48.44s ->` **`37.57s (>8.0x)`** | `12.03 MB -> 644 B` | **`81,438.6x`** / `20,892.4x` | `rc=1 -> rc=0` · `61==61` |
+| **Microsoft** (`microsoft/semantic-kernel`) | `1,050` commits (C#/Py) | `223.71s -> 21.19s ->` **`12.48s (17.92x)`** | `9.67 MB -> 644 B` | **`24,290.1x`** / `6,254.4x` | `rc=1 -> rc=0` · `23==23==23` |
+
+- **Timeout fixed & `6.02x–17.92x` faster:** Bounded pre-redaction hunk slicing (`git_inspector.py`) plus precompiled doc-drift/caller guards and `O(1)` `commit_by_file` lookup (`ast_analyzer.py`) eliminated the `>300s` timeout on `meta-llama/llama-stack`.
+- **Cross-process continuity & strict contracts:** `athena view` recovered from `rc=1` to `rc=0` across all 5 repos via disk-backed `ev_<sha256>` persistence, `affected-tests --limit 5` paged cleanly (`has_more=true`), `map --max-chars -10` returned `rc=2` (`INVALID_MAX_CHARS`), and `athena doctor` passed (`hybrid_rust`) on all 5 repos. See [docs/evaluation.md](docs/evaluation.md) for full tables.
 
 ---
 
@@ -185,7 +206,7 @@ python scripts/build_rust_accel.py
 FAST_ANYTHING_DISABLE=1 athena graph . --query "auth"
 ```
 
-Full version-by-version test history (`v1.0.0` -> `v1.3.1`) and Rust parity audit: [docs/evaluation.md](docs/evaluation.md).
+Full version-by-version test history (`v1.0.0` -> `v1.3.2`) and Rust parity audit: [docs/evaluation.md](docs/evaluation.md).
 
 ---
 
@@ -195,7 +216,7 @@ Full version-by-version test history (`v1.0.0` -> `v1.3.1`) and Rust parity audi
 - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
   with:
     fetch-depth: 0
-- uses: aaryanrwt/athena@v1.3.1
+- uses: aaryanrwt/athena@v1.3.2
 ```
 
 Posts one sticky breaking-change & blast-radius summary per PR. See [docs/integrations.md](docs/integrations.md) for Docker, pre-commit, and permissions setup.

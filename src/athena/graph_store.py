@@ -1,8 +1,8 @@
 """Persistent, Incremental Code Knowledge Graph Builder & Snapshot Store.
 
-Distills `graphify`'s zero-LLM AST graph + deterministic community clustering
-with `rea`'s `ev_<sha256>` / `unk_<sha256>` epistemic provenance, atomic snapshot
-swaps (preventing event-loop blocking), and default test/utility down-weighting.
+Zero-LLM polyglot AST graph builder with deterministic community clustering,
+content-addressed `ev_<sha256>` / `unk_<sha256>` provenance, atomic snapshot
+swaps, and default test/utility down-weighting.
 """
 
 from __future__ import annotations
