@@ -204,13 +204,11 @@ Posts one sticky breaking-change & blast-radius summary per PR. See [docs/integr
 
 ## Star History
 
-<a href="https://www.star-history.com/#aaryanrwt/athena&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=aaryanrwt/athena&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=aaryanrwt/athena&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=aaryanrwt/athena&type=Date" />
-  </picture>
-</a>
+<p align="center">
+  <a href="https://github.com/aaryanrwt/athena/stargazers">
+    <img alt="Athena Star History" src="assets/star-history.svg" width="100%" />
+  </a>
+</p>
 
 ---
 
