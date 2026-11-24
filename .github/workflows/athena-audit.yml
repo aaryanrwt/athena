@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13", "3.14"]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
 
     steps:
       - name: Checkout Repository (Full History for Git Revision Tests)
@@ -49,8 +49,8 @@ jobs:
           git config --global user.name "athena-ci"
           git config --global user.email "athena-ci@users.noreply.github.com"
 
-      - name: Run Unit, MCP Protocol & Real-World Edge-Case Tests
-        run: python -m pytest -v -m "not ollama" tests/test_athena_mvp.py tests/test_mcp_protocol.py tests/test_real_world_edge_cases.py
+      - name: Run Full Offline Test Suite (Unit, MCP, v1.2-v1.3.1, Release & Rust Parity)
+        run: python -m pytest -v -m "not ollama" --ignore=tests/evaluation
 
       - name: Validate Wheel Build
         if: matrix.python-version == '3.14'
