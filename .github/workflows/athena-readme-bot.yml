@@ -1,26 +1,29 @@
-name: Update Star History Chart
+name: Athena README Badge & Star-History Bot
 
 on:
   watch:
     types: [started]
-  schedule:
-    - cron: "0 2 * * *"
-  workflow_dispatch:
+  release:
+    types: [published, created, edited]
   push:
     branches: [main]
-    paths:
-      - "scripts/generate_star_history.py"
-      - ".github/workflows/star-history.yml"
+    paths-ignore:
+      - "assets/star-history.svg"
+      - "assets/badges/**"
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
 
 concurrency:
-  group: star-history
+  group: athena-readme-bot
   cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  update-star-history:
+  update-readme-assets:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -31,17 +34,17 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Generate Modern Star History SVG
+      - name: Refresh Self-Hosted Badges & Star History + Check External Badges
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python scripts/generate_star_history.py --repo "${{ github.repository }}" --output assets/star-history.svg
+        run: python scripts/update_readme_assets.py --repo "${{ github.repository }}" --assets-dir assets --readme README.md --check-external
 
-      - name: Commit Updated Star History SVG
+      - name: Commit & Push Updated README Assets
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add assets/star-history.svg
+          git add assets/star-history.svg assets/badges/
           if ! git diff --cached --quiet; then
-            git commit -m "chore(readme): update star history chart [skip ci]"
+            git commit -m "chore(bot): update README badges and star history [skip ci]"
             git push
           fi
