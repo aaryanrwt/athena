@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="130" height="20" viewBox="0 0 130 20" role="img" aria-label="updated: Nov 24">
-  <title>updated: Nov 24</title>
+<svg xmlns="http://www.w3.org/2000/svg" width="130" height="20" viewBox="0 0 130 20" role="img" aria-label="updated: Nov 25">
+  <title>updated: Nov 25</title>
   <defs>
     <clipPath id="badgeClip"><rect width="130" height="20" rx="3"/></clipPath>
   </defs>
@@ -9,5 +9,5 @@
   </g>
   <g transform="translate(6, 3) scale(0.875)"><path fill="#E0E7FF" d="M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z"/></g>
   <text x="49.0" y="13.8" text-anchor="middle" fill="#E0E7FF" font-family="Verdana, Geneva, 'DejaVu Sans', sans-serif" font-size="11" font-weight="500">updated</text>
-  <text x="103.0" y="13.8" text-anchor="middle" fill="#FFFFFF" font-family="Verdana, Geneva, 'DejaVu Sans', sans-serif" font-size="11" font-weight="600">Nov 24</text>
+  <text x="103.0" y="13.8" text-anchor="middle" fill="#FFFFFF" font-family="Verdana, Geneva, 'DejaVu Sans', sans-serif" font-size="11" font-weight="600">Nov 25</text>
 </svg>
