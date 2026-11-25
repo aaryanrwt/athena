@@ -234,9 +234,11 @@ class EvidenceStore:
         if not _EVIDENCE_ID_RE.match(evidence_id):
             return None
         try:
+            if storage_dir.is_symlink():
+                return None
             root = storage_dir.resolve()
             candidate = (root / f"{evidence_id}.json").resolve()
-            if candidate.parent != root or candidate.is_symlink():
+            if not candidate.is_relative_to(root) or candidate.parent != root or candidate.is_symlink():
                 return None
             return candidate
         except OSError:
@@ -244,12 +246,33 @@ class EvidenceStore:
 
     def _prune_disk_entries(self, storage_dir: Path) -> None:
         try:
-            files = [p for p in storage_dir.glob("ev_*.json") if p.is_file() and not p.is_symlink()]
+            if storage_dir.is_symlink():
+                return
+            root = storage_dir.resolve()
+            if not root.is_dir():
+                return
+            files: list[Path] = []
+            for p in root.iterdir():
+                if p.is_symlink() or not p.is_file() or p.suffix != ".json":
+                    continue
+                if not _EVIDENCE_ID_RE.match(p.stem):
+                    continue
+                resolved = p.resolve()
+                if resolved.is_relative_to(root) and resolved.parent == root:
+                    files.append(p)
             if len(files) <= self._max_entries:
                 return
             files.sort(key=lambda p: (p.stat().st_mtime, p.name))
             for stale in files[: len(files) - self._max_entries]:
-                stale.unlink(missing_ok=True)
+                if stale.is_symlink():
+                    continue
+                resolved_stale = stale.resolve()
+                if (
+                    _EVIDENCE_ID_RE.match(resolved_stale.stem)
+                    and resolved_stale.is_relative_to(root)
+                    and resolved_stale.parent == root
+                ):
+                    resolved_stale.unlink(missing_ok=True)
         except OSError:
             return
 
@@ -258,6 +281,8 @@ class EvidenceStore:
         if storage_dir is None:
             return
         try:
+            if storage_dir.is_symlink():
+                return
             storage_dir.mkdir(parents=True, exist_ok=True)
             dest = self._entry_path(storage_dir, entry.evidence_id)
             if dest is None:

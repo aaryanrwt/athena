@@ -536,3 +536,49 @@ def test_large_hunk_diff_parsing_and_redaction_bounds() -> None:
     assert len(hunks[0].excerpt) <= MAX_EVIDENCE_EXCERPT_CHARS + 32
     assert "ghp_" not in hunks[0].excerpt
     assert hunks[11].excerpt == ""
+
+
+def test_evidence_store_prune_path_confinement_and_asset_secret_redaction(tmp_path: Path) -> None:
+    import importlib.util
+
+    from athena.evidence_store import EvidenceStore
+
+    ev_dir = tmp_path / "evidence"
+    ev_dir.mkdir()
+    decoy = ev_dir / "ev_custom_note.json"
+    decoy.write_text('{"keep": true}', encoding="utf-8")
+
+    store = EvidenceStore(max_entries=2, persist_dir=ev_dir)
+    for i in range(4):
+        store.retain("graph_query", {"status": "ok", "seq": i})
+
+    canonical_files = [
+        p for p in ev_dir.glob("ev_*.json") if p != decoy
+    ]
+    assert len(canonical_files) == 2
+    assert decoy.exists(), "Non-canonical file must never be unlinked during LRU pruning"
+
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "update_readme_assets.py"
+    spec = importlib.util.spec_from_file_location("update_readme_assets", script_path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    raw_tok = "tok_custom_987654321"
+    leaked = (
+        f"{raw_tok} "
+        "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456 "
+        "github_pat_1234567890abcdefghij123456 "
+        "Authorization: Bearer super_secret_token "
+        "https://alice:s3cr3tpass@example.com/path?token=abc123&ok=1"
+    )
+    redacted = mod._redact_secrets(leaked, (raw_tok,))
+    assert raw_tok not in redacted
+    assert "ghp_" not in redacted
+    assert "github_pat_" not in redacted
+    assert "super_secret_token" not in redacted
+    assert "alice:s3cr3tpass" not in redacted
+    assert "abc123" not in redacted
+
+    with pytest.raises(ValueError, match="non-GitHub API"):
+        mod._github_get_json("https://evil.example/repos", "application/json", raw_tok)

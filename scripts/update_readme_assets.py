@@ -83,8 +83,46 @@ _ICON_LICENSE = (
 )
 
 
+_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"), "[REDACTED]"),
+    (re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{16,}\b"), "[REDACTED]"),
+    (
+        re.compile(r"(Authorization\s*:\s*(?:Bearer|token)\s+)[^\s\"']+", re.IGNORECASE),
+        r"\1[REDACTED]",
+    ),
+    (
+        re.compile(r"(https?://)([^:@/\s]+):([^@/\s]+)@", re.IGNORECASE),
+        r"\1[REDACTED]@",
+    ),
+    (
+        re.compile(r"([?&](?:token|access_token|api_key|key)=)([^&\s]+)", re.IGNORECASE),
+        r"\1[REDACTED]",
+    ),
+)
+
+
+def _redact_secrets(text: str, extra_secrets: tuple[str, ...] = ()) -> str:
+    """Mask raw API tokens, Authorization headers, URL creds, and token query params."""
+    masked = str(text)
+    for secret in extra_secrets:
+        if secret:
+            masked = masked.replace(secret, "[REDACTED]")
+    for pattern, replacement in _SECRET_PATTERNS:
+        masked = pattern.sub(replacement, masked)
+    return masked
+
+
+def _safe_print(message: str, *, secrets: tuple[str, ...] = (), file: object = None) -> None:
+    """Write stdout/stderr output only after scrubbing any active credentials."""
+    stream = file if file is not None else sys.stdout
+    print(_redact_secrets(message, secrets), file=stream)  # type: ignore[arg-type]
+
+
 def _github_get_json(url: str, accept: str, token: str | None) -> object:
-    """Fetch and decode JSON from the GitHub REST API."""
+    """Fetch and decode JSON from the GitHub REST API with credential host pinning."""
+    if not url.startswith("https://api.github.com/"):
+        raise ValueError("Refusing to send GitHub API credentials to a non-GitHub API URL.")
+    active_secrets = (token,) if token else ()
     headers = {
         "User-Agent": "athena-readme-bot",
         "Accept": accept,
@@ -93,8 +131,15 @@ def _github_get_json(url: str, accept: str, token: str | None) -> object:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise
+        raise RuntimeError(_redact_secrets(f"GitHub API request failed ({url}): {exc}", active_secrets)) from None
+    except (urllib.error.URLError, OSError) as exc:
+        raise RuntimeError(_redact_secrets(f"GitHub API request failed ({url}): {exc}", active_secrets)) from None
 
 
 def _is_bot_commit(entry: dict) -> bool:
@@ -550,7 +595,10 @@ def render_star_history_svg(
     return svg
 
 
-def check_external_badges(readme_path: Path) -> list[tuple[str, str, str]]:
+def check_external_badges(
+    readme_path: Path,
+    active_secrets: tuple[str, ...] = (),
+) -> list[tuple[str, str, str]]:
     """Health-check external https:// img tags in README.md without aborting on blips."""
     if not readme_path.exists():
         return []
@@ -563,22 +611,25 @@ def check_external_badges(readme_path: Path) -> list[tuple[str, str, str]]:
         alt_m = re.search(r'alt="([^"]*)"', tag)
         alt = alt_m.group(1) if alt_m else "External image"
         url = src_m.group(1)
+        safe_url = _redact_secrets(url, active_secrets)
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "athena-readme-bot"})
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = resp.read()
                 if resp.status == 200 and len(data) > 50:
-                    results.append((alt, url, f"HTTP 200 ({len(data)} bytes)"))
+                    results.append((alt, safe_url, f"HTTP 200 ({len(data)} bytes)"))
                 else:
-                    results.append((alt, url, f"WARN HTTP {resp.status} ({len(data)} bytes)"))
+                    results.append((alt, safe_url, f"WARN HTTP {resp.status} ({len(data)} bytes)"))
         except Exception as exc:
-            results.append((alt, url, f"WARN {exc}"))
+            safe_err = _redact_secrets(str(exc), active_secrets)
+            results.append((alt, safe_url, f"WARN {safe_err}"))
     return results
 
 
 def _write_summary(
     generated: list[tuple[Path, str]],
     external_checks: list[tuple[str, str, str]],
+    active_secrets: tuple[str, ...] = (),
 ) -> None:
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY")
     if not summary_file:
@@ -594,7 +645,7 @@ def _write_summary(
     for alt, url, status in external_checks:
         lines.append(f"| External `{alt}` (`{url[:60]}`) | {status} |")
     with open(summary_file, "a", encoding="utf-8") as fh:
-        fh.write("\n".join(lines) + "\n")
+        fh.write(_redact_secrets("\n".join(lines) + "\n", active_secrets))
 
 
 def _run_self_test() -> None:
@@ -612,6 +663,32 @@ def _run_self_test() -> None:
     assert _is_bot_commit({"author": {"login": "github-actions[bot]"}, "commit": {"message": "x"}})
     assert _is_bot_commit({"author": None, "commit": {"message": "chore(bot): update README badges"}})
     assert not _is_bot_commit({"author": {"login": "aaryanrwt"}, "commit": {"message": "feat: add CLI"}})
+
+    sample_secret = "custom_raw_token_value_123"
+    dirty = (
+        f"{sample_secret} "
+        "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456 "
+        "github_pat_1234567890abcdefghij123456 "
+        "Authorization: Bearer top_secret_bearer "
+        "https://user:pass@example.com/a?token=leak123&x=1"
+    )
+    cleaned = _redact_secrets(dirty, (sample_secret,))
+    for forbidden in (
+        sample_secret,
+        "ghp_",
+        "github_pat_",
+        "top_secret_bearer",
+        "user:pass",
+        "leak123",
+    ):
+        assert forbidden not in cleaned, f"Unredacted secret fragment: {forbidden}"
+
+    try:
+        _github_get_json("https://example.com/repos", "application/json", "ghp_1234567890abcdef1234")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected ValueError for non-GitHub API URL")
 
     created = date(2026, 10, 16)
     sample_stars = [
@@ -666,8 +743,13 @@ def main(argv: list[str] | None = None) -> int:
         _run_self_test()
         return 0
 
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    state = fetch_repo_state(args.repo, token)
+    token = (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or "").strip() or None
+    active_secrets = (token,) if token else ()
+    try:
+        state = fetch_repo_state(args.repo, token)
+    except Exception as exc:
+        _safe_print(f"Error updating README assets: {exc}", secrets=active_secrets, file=sys.stderr)
+        return 1
 
     created_date = state["created_date"]
     star_dates = state["star_dates"]
@@ -709,16 +791,16 @@ def main(argv: list[str] | None = None) -> int:
     summary_rows: list[tuple[Path, str]] = []
     for path, content, detail in outputs:
         path.write_text(content, encoding="utf-8", newline="\n")
-        print(f"Wrote {path} ({detail})")
+        _safe_print(f"Wrote {path} ({detail})", secrets=active_secrets)
         summary_rows.append((path, detail))
 
     external_checks: list[tuple[str, str, str]] = []
     if args.check_external:
-        external_checks = check_external_badges(Path(args.readme))
+        external_checks = check_external_badges(Path(args.readme), active_secrets=active_secrets)
         for alt, url, status in external_checks:
-            print(f"External check | {alt:28s} | {status}")
+            _safe_print(f"External check | {alt:28s} | {status}", secrets=active_secrets)
 
-    _write_summary(summary_rows, external_checks)
+    _write_summary(summary_rows, external_checks, active_secrets=active_secrets)
     return 0
 
 
