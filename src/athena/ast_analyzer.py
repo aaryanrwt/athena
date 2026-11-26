@@ -14,6 +14,7 @@ from athena.git_inspector import (
     _is_test_file,
     decode_bytes_safely,
     git_grep_matching_files,
+    is_non_api_tooling_file,
     read_blob_at_revision,
     read_blobs_at_revision,
     run_git_command,
@@ -38,6 +39,7 @@ from athena.treesitter_parser import (
     _preprocess_cpp_export_macros,
     _store_symbol,
     compute_multilang_visibility,
+    extract_ml_param_names,
     extract_multilang_calls_treesitter,
     get_language_family,
     get_treesitter_status,
@@ -305,6 +307,8 @@ def _determine_py_export_exposure(
 ) -> tuple[bool, str]:
     """Determine if a Python symbol is part of the public API surface exposed to external consumers."""
     norm_path = file_path.replace("\\", "/")
+    if is_non_api_tooling_file(norm_path):
+        return False, f"Repository build/tooling/script file `{norm_path}`"
     parts = [p for p in norm_path.split("/") if p]
 
     if dunder_all is not None:
@@ -1970,7 +1974,7 @@ def _receiver_matches_owner(receiver: str | None, owner_type: str | None) -> boo
     """Return False when a specific non-generic call receiver conflicts with owner_type."""
     if not receiver or not owner_type:
         return True
-    r_low = receiver.lower().strip()
+    r_low = receiver.lower().strip().lstrip("$")
     if r_low in _GENERIC_RECEIVERS or len(r_low) <= 1:
         return True
     o_low = owner_type.lower().strip()
@@ -2017,31 +2021,47 @@ def _extract_multilang_calls_fallback(
         stripped = cline.strip()
         if not stripped:
             continue
-        if _DECL_LINE_RE.match(stripped):
-            continue
-        if family == "c_cpp" and _CPP_LINE_DECL_RE.match(stripped) and "=" not in stripped.split("(", 1)[0]:
+        is_decl_line = bool(
+            _DECL_LINE_RE.match(stripped)
+            or (family == "c_cpp" and _CPP_LINE_DECL_RE.match(stripped) and "=" not in stripped.split("(", 1)[0])
+        )
+        # Skip pure declaration headers unless they also host an inline body (`{` or `=>`)
+        if is_decl_line and "{" not in cline and "=>" not in cline:
             continue
         # Blank out quoted literals to ignore symbol names inside string constants
         no_str = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`', '""', cline)
+        if is_decl_line and "{" not in no_str and "=>" not in no_str:
+            continue
         if not call_regex.search(no_str):
             continue
         raw_snippet = raw_lines[idx - 1].strip()[:160] if idx - 1 < len(raw_lines) else stripped[:160]
         for m in call_regex.finditer(no_str):
             short_n = m.group(1)
             prefix = no_str[: m.start()].rstrip()
+            # Ignore the declared symbol itself on single-line definitions before `{` or `=>`
+            if is_decl_line and "{" not in prefix and "=>" not in prefix:
+                continue
             recv: str | None = None
             m_recv = re.search(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\.|::|->|\\)\s*$", prefix)
             if m_recv:
                 recv = m_recv.group(1)
-            # Skip unannotated definition headers like `Ret Foo(a, b) {` without `=` or `return` or `await`
-            if (
-                not recv
-                and stripped.endswith("{")
-                and "=" not in prefix
-                and not prefix.lstrip().startswith(("return", "if", "while", "for", "else", "await"))
-                and re.match(r"^[A-Za-z_][A-Za-z0-9_<>*&:\s]+\s+$", prefix)
-            ):
-                continue
+            local_pre = re.split(r"[{;]", prefix)[-1].rstrip()
+            if not recv:
+                if re.search(r"\b(?:func|fn|def|fun|function|class|struct|interface|enum|trait|impl)\s*$", local_pre):
+                    continue
+                after_call = no_str[m.end() :]
+                close_rel = after_call.find(")")
+                tail_after_paren = after_call[close_rel + 1 :].lstrip() if close_rel != -1 else ""
+                # Skip unannotated definition headers like `Ret Foo(a, b) {` without `=` or control-flow keywords
+                if (
+                    (stripped.endswith("{") or tail_after_paren.startswith("{"))
+                    and "=" not in local_pre
+                    and not local_pre.lstrip().startswith(
+                        ("return", "if", "while", "for", "else", "await", "switch", "catch", "match", "throw", "yield")
+                    )
+                    and re.match(r"^[A-Za-z_][A-Za-z0-9_<>*&:\s]+$", local_pre)
+                ):
+                    continue
             calls.append(
                 ParsedCallSite(
                     callee_name=short_n,
@@ -2819,6 +2839,9 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
 _VIS_RANK = {"private": 0, "internal": 1, "protected": 2, "public": 3}
 
 
+_NAMED_ARG_FAMILIES = frozenset({"swift", "csharp", "kotlin", "php"})
+
+
 def _semantic_compare_multilang_symbol(
     family: str,
     old_sym: ParsedMultiLangSymbol,
@@ -2846,6 +2869,13 @@ def _semantic_compare_multilang_symbol(
     same_req_count = old_sym.required_param_count == new_sym.required_param_count
     same_param_types = old_sym.normalized_param_types == new_sym.normalized_param_types
 
+    named_param_changed = False
+    if family in _NAMED_ARG_FAMILIES and same_param_count and same_param_types and len(old_sym.params) > 0:
+        old_pnames = extract_ml_param_names(old_sym.params, family)
+        new_pnames = extract_ml_param_names(new_sym.params, family)
+        if len(old_pnames) == len(new_pnames) and old_pnames != new_pnames and any(old_pnames):
+            named_param_changed = True
+
     is_positional_rename_only = (
         family in _POSITIONAL_ONLY_FAMILIES
         and same_param_count
@@ -2868,6 +2898,7 @@ def _semantic_compare_multilang_symbol(
         new_sym.required_param_count > old_sym.required_param_count
         or len(new_sym.params) < len(old_sym.params)
         or (not is_positional_rename_only and param_types_incompatible)
+        or named_param_changed
     )
     param_optional_added = len(new_sym.params) > len(old_sym.params) and not param_breaking
 
@@ -2895,9 +2926,14 @@ def _semantic_compare_multilang_symbol(
     notes: list[str] = []
     if vis_narrowed:
         notes.append(f"Visibility narrowed ({old_sym.visibility} -> {new_sym.visibility}).")
+    if named_param_changed:
+        notes.append("Named parameter label(s) changed (affects named-argument callers).")
     if rec_errors:
         notes.append(f"Recursive self-call bug: {rec_errors[0]}")
-    sev = "high" if is_brk else "low"
+    if is_brk and named_param_changed and not (bool(rec_errors) or vis_narrowed or async_changed or static_changed or ret_changed or new_sym.required_param_count > old_sym.required_param_count or len(new_sym.params) < len(old_sym.params) or param_types_incompatible):
+        sev = "high" if family == "swift" else "medium"
+    else:
+        sev = "high" if is_brk else "low"
     return True, is_brk, sev, (" " + " ".join(notes)) if notes else ""
 
 
@@ -3761,6 +3797,106 @@ def find_affected_callers_in_tree(
     return callers
 
 
+_DOC_SECTION_STOPWORDS = frozenset(
+    {
+        "self",
+        "cls",
+        "args",
+        "kwargs",
+        "return",
+        "returns",
+        "raises",
+        "yields",
+        "note",
+        "notes",
+        "example",
+        "examples",
+        "attributes",
+        "see",
+        "warnings",
+        "warning",
+        "references",
+        "type",
+        "rtype",
+    }
+)
+
+
+def _extract_docstring_documented_params(doc: str) -> list[tuple[str, str]]:
+    """Extract (param_name, snippet) pairs across Sphinx, Google, and NumPy docstrings."""
+    found: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def _add(pname: str, snippet: str) -> None:
+        if pname in _DOC_SECTION_STOPWORDS or pname in seen:
+            return
+        seen.add(pname)
+        found.append((pname, snippet))
+
+    # 1. Sphinx `:param name:`
+    for p in re.findall(r":param\s+([A-Za-z_][A-Za-z0-9_]*):", doc):
+        _add(p, f":param {p}:")
+
+    lines = doc.splitlines()
+
+    # 2. Google `Args:` / `Arguments:` / `Parameters:` sections
+    i = 0
+    while i < len(lines):
+        m_hdr = re.match(r"^([ \t]*)(?:Args|Arguments|Parameters)\s*:\s*$", lines[i])
+        if not m_hdr:
+            i += 1
+            continue
+        sec_indent = len(m_hdr.group(1))
+        entry_indent: int | None = None
+        j = i + 1
+        while j < len(lines):
+            ln = lines[j]
+            stripped = ln.strip()
+            if not stripped:
+                j += 1
+                continue
+            cur_indent = len(ln) - len(ln.lstrip(" \t"))
+            if cur_indent <= sec_indent:
+                break
+            if entry_indent is None:
+                entry_indent = cur_indent
+            if cur_indent == entry_indent:
+                m_param = re.match(r"^[ \t]*\*{0,2}([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^)\n]*\))?\s*:", ln)
+                if m_param:
+                    _add(m_param.group(1), stripped[:120])
+            j += 1
+        i = j
+
+    # 3. NumPy `Parameters\n----------` sections
+    i = 0
+    while i + 1 < len(lines):
+        m_np = re.match(r"^([ \t]*)(?:Parameters|Other Parameters)\s*$", lines[i])
+        if not m_np or not re.match(r"^[ \t]*-{3,}\s*$", lines[i + 1]):
+            i += 1
+            continue
+        sec_indent = len(m_np.group(1))
+        j = i + 2
+        while j < len(lines):
+            ln = lines[j]
+            stripped = ln.strip()
+            if not stripped:
+                j += 1
+                continue
+            cur_indent = len(ln) - len(ln.lstrip(" \t"))
+            if cur_indent < sec_indent:
+                break
+            if j + 1 < len(lines) and re.match(r"^[ \t]*-{3,}\s*$", lines[j + 1]):
+                break
+            if cur_indent == sec_indent:
+                m_param = re.match(r"^[ \t]*\*{0,2}([A-Za-z_][A-Za-z0-9_]*)\s*(?::|$)", ln)
+                if m_param and (":" in ln or (j + 1 < len(lines) and len(lines[j + 1]) - len(lines[j + 1].lstrip(" \t")) > sec_indent)):
+                    _add(m_param.group(1), stripped[:120])
+            j += 1
+        i = j
+
+    return found
+
+
 def detect_python_doc_drift(
     code: str,
     file_path: str = "module.py",
@@ -3778,15 +3914,18 @@ def detect_python_doc_drift(
             if not doc:
                 continue
             actual_params = {arg.arg for arg in node.args.args + node.args.posonlyargs + node.args.kwonlyargs}
-            param_matches = re.findall(r":param\s+([A-Za-z0-9_]+):", doc)
-            for p in param_matches:
+            if node.args.vararg is not None:
+                actual_params.add(node.args.vararg.arg)
+            if node.args.kwarg is not None:
+                actual_params.add(node.args.kwarg.arg)
+            for p, snippet in _extract_docstring_documented_params(doc):
                 if p not in actual_params:
                     drift_items.append(
                         DocDriftItem(
                             doc_file=file_path,
                             line_number=getattr(node, "lineno", 1),
                             referenced_symbol=node.name,
-                            snippet=f":param {p}:",
+                            snippet=snippet,
                             drift_reason=f"Docstring for '{node.name}' documents parameter '{p}' which does not exist in function signature.",
                             evidence_ids=[],
                         )

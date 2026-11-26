@@ -26,7 +26,7 @@ jobs:
         with:
           fetch-depth: 0              # Athena needs history for base..head
           persist-credentials: false
-      - uses: aaryanrwt/athena@v1.3.3
+      - uses: aaryanrwt/athena@v1.4.0
 ```
 
 Inputs: `base`, `target`, `install-source` (`git` default, or `local` to install
@@ -63,23 +63,31 @@ user, and uses `athena` as the entrypoint.
 ```yaml
 repos:
   - repo: https://github.com/aaryanrwt/athena
-    rev: v1.3.3   # use the latest release tag
+    rev: v1.4.0   # use the latest release tag
     hooks:
       - id: athena-check
 ```
 
 The hook runs `athena check --staged`.
 
+## Athena + AI Closed-Loop Repair Providers
+
+Athena separates deterministic syntax/structural rewrites (`athena fix`) from semantic changes such as new required arguments, removed APIs, or changed return types (`athena repair` + `athena verify-fix`):
+
+- **Zero-key MCP `handoff` (`prepare_ai_repair_tasks` / `--provider handoff`):** Generates compact, bounded per-caller repair prompts with exact old/new signatures, target file slices, and impacted tests so your active MCP host agent (Claude Code, Codex, Cursor, Hermes, Pi) supplies the edit directly and then verifies with `verify_fix`.
+- **Direct CLI & Local / HTTP Backends (`athena repair` / `run_ai_repair`):** Supports `claude-code`, `codex`, `hermes`, `pi`, `cursor`, local `ollama` (`qwen2.5-coder:7b` / `qwen3:4b`), `openai-compat`, `anthropic`, and `auto` provider resolution.
+- **Guardrails & Automatic Rollback:** AI patches are restricted to explicit `allowed_files` caller paths, snapped within `+-3` lines with `L<n>:` prefix cleanup, and re-verified by `verify-fix` (`py_compile`/mypy/pyright/`go vet`/`cargo check`/`tsc`/`node --check`/`dotnet build`/`php -l` + impacted tests + AST re-audit), restoring file snapshots automatically if verification fails (unless `--no-rollback` is set).
+
 ## Maintainer setup
 
 ### GitHub Release & Version Tagging
 
-1. Tag a release commit (for example `git tag v1.3.3 && git push origin v1.3.3`).
+1. Tag a release commit (for example `git tag v1.4.0 && git push origin v1.4.0`).
 2. Create a GitHub Release with release notes generated via `athena release-notes`.
 
 ### GitHub Marketplace listing
 
 1. Make sure `action.yml` is at the repository root and the repository is public.
-2. Tag a release (for example `v1.3.3`) and move a major tag (`v1`) to it.
+2. Tag a release (for example `v1.4.0`) and move a major tag (`v1`) to it.
 3. On the release page choose *Publish this Action to the GitHub Marketplace*,
    pick a category, and accept the Marketplace developer agreement.

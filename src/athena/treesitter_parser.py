@@ -223,6 +223,21 @@ class ParsedCallSite:
     call_snippet: str
 
 
+@dataclass
+class ParsedCallSpan:
+    """Exact byte-offset call invocation span for multi-language mechanical codemods."""
+
+    callee_name: str
+    receiver: str | None
+    start_line: int
+    end_line: int
+    start_byte: int
+    end_byte: int
+    callee_start_byte: int
+    callee_end_byte: int
+    arg_spans: list[tuple[int, int, str | None]] = field(default_factory=list)
+
+
 def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -440,7 +455,11 @@ def compute_multilang_visibility(
     has_export: bool = False,
 ) -> tuple[bool, str]:
     """Compute whether a non-Python declaration belongs to the external public API surface."""
+    from athena.git_inspector import is_non_api_tooling_file
+
     norm = file_path.replace("\\", "/")
+    if is_non_api_tooling_file(norm):
+        return False, f"Repository build/tooling/script file `{norm}`"
     is_header = norm.lower().endswith((".h", ".hh", ".hpp", ".hxx"))
     stem = norm.rsplit("/", 1)[-1].rsplit(".", 1)[0]
     in_internal_dir = "/internal/" in f"/{norm.lower()}"
@@ -568,6 +587,38 @@ def normalize_type_expr(type_text: str) -> str:
     s = re.sub(r"\s*([*&,<>:\[\]])\s*", r"\1", s)
     s = s.replace(",", ", ")
     return s.strip()
+
+
+def extract_ml_param_names(params: list[str], family: str) -> list[str]:
+    """Extract parameter identifiers/external labels from parsed multi-language params."""
+    names: list[str] = []
+    for raw in params:
+        txt = raw.split("=", 1)[0].strip()
+        if not txt:
+            continue
+        if family == "swift":
+            head = txt.split(":", 1)[0].strip()
+            toks = head.split()
+            lbl = toks[0] if toks else ""
+            names.append("" if lbl == "_" else lbl)
+        elif family in ("ts_js", "rust", "kotlin", "scala"):
+            head = txt.split(":", 1)[0].strip().rstrip("?").lstrip("*").strip()
+            toks = [t for t in re.split(r"\s+", head) if t not in ("val", "var", "mut", "readonly", "public", "private")]
+            names.append(toks[-1] if toks else "")
+        elif family == "php":
+            m = re.search(r"\$([A-Za-z_][A-Za-z0-9_]*)", txt)
+            names.append(m.group(1) if m else "")
+        elif family == "go":
+            toks = txt.split()
+            names.append(toks[0] if len(toks) >= 2 and re.match(r"^[A-Za-z_]\w*$", toks[0]) else "")
+        else:
+            no_attr = re.sub(r"^\[[^\]]+\]\s*", "", txt).strip()
+            no_attr = re.sub(r"^(?:this|params|ref|out|in|final)\s+", "", no_attr).strip()
+            no_attr = re.sub(r"(?:\[\s*\])+$", "", no_attr).strip()
+            toks = no_attr.split()
+            m_id = re.search(r"([A-Za-z_][A-Za-z0-9_]*)$", no_attr)
+            names.append(m_id.group(1) if m_id and len(toks) >= 2 else "")
+    return names
 
 
 def extract_param_info_from_text(param_text: str, family: str) -> tuple[str, str, bool]:
@@ -1829,6 +1880,52 @@ def _last_ident_from_expr(expr_text: str) -> str | None:
     return m[-1] if m else None
 
 
+def _collect_rust_macro_call_entries(
+    macro_node: Any,
+    orig_src_bytes: bytes,
+    target_short_names: set[str],
+) -> list[tuple[Any, bytes, int, int, int]]:
+    """Parse Rust macro token_tree arguments into (call_node, sub_bytes, byte_shift, start_line, end_line)."""
+    tt_nodes = [ch for ch in macro_node.children if ch.is_named and ch.type == "token_tree"]
+    if not tt_nodes:
+        return []
+    out: list[tuple[Any, bytes, int, int, int]] = []
+    for tt in tt_nodes:
+        tt_bytes = orig_src_bytes[tt.start_byte : tt.end_byte]
+        tt_text = tt_bytes.decode("utf-8", errors="replace")
+        if not any(name in tt_text for name in target_short_names):
+            continue
+        if tt_bytes.startswith((b"(", b"[")):
+            prefix, suffix = b"fn _m() { let _x = ", b"; }"
+        elif tt_bytes.startswith(b"{"):
+            prefix, suffix = b"fn _m() ", b""
+        else:
+            continue
+        wrapped = (prefix + tt_bytes + suffix).decode("utf-8", errors="replace")
+        sub_tree, sub_bytes = _parse_tree(wrapped, "rust")
+        if sub_tree is None or sub_bytes is None:
+            continue
+        shift = tt.start_byte - len(prefix)
+        lo_b = len(prefix)
+        hi_b = lo_b + len(tt_bytes)
+        stk: list[Any] = [sub_tree.root_node]
+        while stk:
+            cur = stk.pop()
+            if cur.type in _CALL_NODE_TYPES and cur.start_byte >= lo_b and cur.end_byte <= hi_b:
+                real_s = cur.start_byte + shift
+                real_e = cur.end_byte + shift
+                s_ln = orig_src_bytes[:real_s].count(b"\n") + 1
+                e_ln = orig_src_bytes[: max(real_s, real_e - 1)].count(b"\n") + 1
+                out.append((cur, sub_bytes, shift, s_ln, e_ln))
+            elif cur.type == "macro_invocation" and cur.start_byte > lo_b and cur.end_byte <= hi_b:
+                # Recurse bounded one level for nested assert!(vec!(...))
+                pass
+            for ch in reversed(cur.children):
+                if ch.is_named:
+                    stk.append(ch)
+    return out
+
+
 def extract_multilang_calls_treesitter(
     source: str,
     file_path: str,
@@ -1854,36 +1951,187 @@ def extract_multilang_calls_treesitter(
 
     lines = source.splitlines()
     calls: list[ParsedCallSite] = []
+
+    def _emit_call(call_n: Any, cur_bytes: bytes, lineno: int) -> None:
+        callee, recv = _extract_receiver_and_callee(call_n, cur_bytes)
+        if callee and not callee.startswith("~") and callee in target_short_names:
+            args_n = call_n.child_by_field_name("arguments")
+            arg_cnt: int | None = None
+            if args_n is not None:
+                arg_txt = _node_text(args_n, cur_bytes).strip()
+                if arg_txt.startswith("(") and arg_txt.endswith(")"):
+                    inner = arg_txt[1:-1].strip()
+                    arg_cnt = len(split_top_level_comma(inner)) if inner else 0
+            snippet = lines[lineno - 1].strip()[:160] if 1 <= lineno <= len(lines) else normalize_whitespace(_node_text(call_n, cur_bytes))[:160]
+            if not snippet.startswith("~"):
+                calls.append(
+                    ParsedCallSite(
+                        callee_name=callee,
+                        receiver=recv,
+                        line_number=lineno,
+                        arg_count=arg_cnt,
+                        call_snippet=snippet,
+                    )
+                )
+
     stack: list[Any] = [tree.root_node]
     while stack:
         node = stack.pop()
         if node.type in ("ERROR", "function_declarator"):
             continue
         if node.type in _CALL_NODE_TYPES:
-            callee, recv = _extract_receiver_and_callee(node, src_bytes)
-            if callee and not callee.startswith("~") and callee in target_short_names:
-                lineno = node.start_point[0] + 1
-                args_n = node.child_by_field_name("arguments")
-                arg_cnt: int | None = None
-                if args_n is not None:
-                    arg_txt = _node_text(args_n, src_bytes).strip()
-                    if arg_txt.startswith("(") and arg_txt.endswith(")"):
-                        inner = arg_txt[1:-1].strip()
-                        arg_cnt = len(split_top_level_comma(inner)) if inner else 0
-                snippet = lines[lineno - 1].strip()[:160] if 1 <= lineno <= len(lines) else normalize_whitespace(_node_text(node, src_bytes))[:160]
-                if not snippet.startswith("~"):
-                    calls.append(
-                        ParsedCallSite(
-                            callee_name=callee,
-                            receiver=recv,
-                            line_number=lineno,
-                            arg_count=arg_cnt,
-                            call_snippet=snippet,
-                        )
-                    )
+            _emit_call(node, src_bytes, node.start_point[0] + 1)
+        elif lang_name == "rust" and node.type == "macro_invocation":
+            for m_call, m_bytes, _, s_ln, _ in _collect_rust_macro_call_entries(node, src_bytes, target_short_names):
+                _emit_call(m_call, m_bytes, s_ln)
         for ch in reversed(node.children):
             if ch.is_named:
                 stack.append(ch)
 
     calls.sort(key=lambda c: (c.line_number, c.callee_name))
     return calls
+
+
+_CALLEE_LEAF_TYPES = frozenset(
+    {
+        "identifier",
+        "simple_identifier",
+        "property_identifier",
+        "field_identifier",
+        "type_identifier",
+        "name",
+    }
+)
+_ARG_LABEL_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\s*(?:=(?![>=])|:(?![:=]))")
+
+
+def _find_callee_leaf_span(call_node: Any, src_bytes: bytes, callee: str) -> tuple[int, int] | None:
+    """Return exact (start_byte, end_byte) of ``callee`` identifier inside ``call_node``."""
+    ntype = call_node.type
+    candidate_root: Any | None = None
+    if ntype in ("method_invocation", "member_call_expression"):
+        candidate_root = call_node.child_by_field_name("name")
+    elif ntype == "call":
+        candidate_root = call_node.child_by_field_name("method") or call_node.child_by_field_name("function")
+    elif ntype in ("object_creation_expression", "new_expression"):
+        candidate_root = call_node.child_by_field_name("type") or call_node.child_by_field_name("constructor")
+    else:
+        candidate_root = (
+            call_node.child_by_field_name("function")
+            or call_node.child_by_field_name("name")
+            or call_node.child_by_field_name("scope")
+        )
+        if candidate_root is None:
+            for ch in call_node.children:
+                if ch.is_named and ch.type not in ("call_suffix", "value_arguments", "argument_list", "arguments"):
+                    candidate_root = ch
+                    break
+
+    if candidate_root is None:
+        return None
+    if _node_text(candidate_root, src_bytes).strip() == callee:
+        return candidate_root.start_byte, candidate_root.end_byte
+
+    # Search rightmost matching identifier leaf inside candidate_root
+    stack: list[Any] = [candidate_root]
+    matches: list[tuple[int, int]] = []
+    while stack:
+        cur = stack.pop()
+        if (cur.type in _CALLEE_LEAF_TYPES or not any(c.is_named for c in cur.children)) and (
+            _node_text(cur, src_bytes).strip() == callee
+        ):
+            matches.append((cur.start_byte, cur.end_byte))
+        for ch in cur.children:
+            if ch.is_named:
+                stack.append(ch)
+    if not matches:
+        return None
+    matches.sort(key=lambda span: (span[0], span[1]))
+    return matches[-1]
+
+
+def _find_argument_list_node(call_node: Any) -> Any | None:
+    """Locate the CST container holding call argument nodes across Tree-sitter grammars."""
+    args_n = call_node.child_by_field_name("arguments")
+    if args_n is None:
+        for ch in call_node.children:
+            if ch.is_named and ch.type in (
+                "arguments",
+                "argument_list",
+                "value_arguments",
+                "call_suffix",
+                "actual_parameters",
+            ):
+                args_n = ch
+                break
+    if args_n is not None and args_n.type == "call_suffix":
+        for ch in args_n.children:
+            if ch.is_named and ch.type in ("value_arguments", "arguments", "argument_list"):
+                args_n = ch
+                break
+    return args_n
+
+
+def extract_multilang_call_spans(
+    source: str,
+    file_path: str,
+    target_short_names: set[str],
+) -> list[ParsedCallSpan] | None:
+    """Extract exact byte-span call sites and arguments across non-Python languages via Tree-sitter."""
+    if not target_short_names:
+        return []
+    if not any(name in source for name in target_short_names):
+        return []
+    lang_name = get_treesitter_language_name(file_path)
+    if not lang_name:
+        return None
+    tree, src_bytes = _parse_tree(source, lang_name)
+    if tree is None or src_bytes is None:
+        return None
+
+    spans: list[ParsedCallSpan] = []
+
+    def _emit_span(call_n: Any, cur_bytes: bytes, shift: int, s_ln: int, e_ln: int) -> None:
+        callee, recv = _extract_receiver_and_callee(call_n, cur_bytes)
+        if callee and not callee.startswith("~") and callee in target_short_names:
+            callee_span = _find_callee_leaf_span(call_n, cur_bytes, callee)
+            if callee_span is not None:
+                arg_spans: list[tuple[int, int, str | None]] = []
+                args_n = _find_argument_list_node(call_n)
+                if args_n is not None:
+                    for ch in args_n.children:
+                        if not ch.is_named or "comment" in ch.type:
+                            continue
+                        arg_txt = cur_bytes[ch.start_byte : ch.end_byte].decode("utf-8", errors="ignore").lstrip()
+                        m_lbl = _ARG_LABEL_RE.match(arg_txt)
+                        arg_spans.append((ch.start_byte + shift, ch.end_byte + shift, m_lbl.group(1) if m_lbl else None))
+                spans.append(
+                    ParsedCallSpan(
+                        callee_name=callee,
+                        receiver=recv,
+                        start_line=s_ln,
+                        end_line=e_ln,
+                        start_byte=call_n.start_byte + shift,
+                        end_byte=call_n.end_byte + shift,
+                        callee_start_byte=callee_span[0] + shift,
+                        callee_end_byte=callee_span[1] + shift,
+                        arg_spans=arg_spans,
+                    )
+                )
+
+    stack: list[Any] = [tree.root_node]
+    while stack:
+        node = stack.pop()
+        if node.type in ("ERROR", "function_declarator"):
+            continue
+        if node.type in _CALL_NODE_TYPES:
+            _emit_span(node, src_bytes, 0, node.start_point[0] + 1, node.end_point[0] + 1)
+        elif lang_name == "rust" and node.type == "macro_invocation":
+            for m_call, m_bytes, shift, s_ln, e_ln in _collect_rust_macro_call_entries(node, src_bytes, target_short_names):
+                _emit_span(m_call, m_bytes, shift, s_ln, e_ln)
+        for ch in reversed(node.children):
+            if ch.is_named:
+                stack.append(ch)
+
+    spans.sort(key=lambda s: (s.start_line, s.callee_start_byte))
+    return spans

@@ -456,8 +456,8 @@ def test_mcp_15_tools_read_only_and_doctor_v133(
     async def _check() -> None:
         tools = await mcp_app.list_tools()
         names = {t.name for t in tools}
-        assert len(tools) == 15
-        assert len(_TOOL_CATALOG_METADATA) == 15
+        assert len(tools) == 18
+        assert len(_TOOL_CATALOG_METADATA) == 18
         assert "generate_fix_plan" in names
         assert "get_token_savings_report" in names
 
@@ -478,7 +478,7 @@ def test_mcp_15_tools_read_only_and_doctor_v133(
 
     assert cli_main(["doctor", "."]) == 0
     doc = json.loads(capsys.readouterr().out)
-    assert doc["mcp"]["registered_tools"] == 15
+    assert doc["mcp"]["registered_tools"] == 18
     assert "treesitter" in doc
     assert "token_ledger" in doc
     assert doc["python"]["supported"] is True

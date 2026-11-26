@@ -199,6 +199,54 @@ def _is_lockfile_or_generated(rel_path: str) -> bool:
     return any(norm.startswith(prefix) or f"/{prefix}" in wrapped for prefix in IGNORED_DIR_PREFIXES)
 
 
+_NON_API_TOOLING_BASENAMES = frozenset(
+    {
+        "noxfile.py",
+        "fabfile.py",
+        "setup.py",
+        "conftest.py",
+        "tasks.py",
+        "manage.py",
+        "gulpfile.js",
+        "gruntfile.js",
+    }
+)
+_NON_API_TOOLING_DIRS = frozenset(
+    {
+        "scripts",
+        "script",
+        "benchmarks",
+        "benchmark",
+        "bench",
+        "examples",
+        "example",
+        "samples",
+        "sample",
+        "tools",
+        "devtools",
+        "hack",
+        "ci",
+        ".github",
+    }
+)
+
+
+def is_non_api_tooling_file(rel_path: str) -> bool:
+    """Return True for build/dev/example/benchmark scripts that are not public library APIs."""
+    norm = rel_path.replace("\\", "/").lower().lstrip("./")
+    if not norm:
+        return False
+    parts = [p for p in norm.split("/") if p]
+    if not parts:
+        return False
+    basename = parts[-1]
+    if basename in _NON_API_TOOLING_BASENAMES:
+        return True
+    if basename.endswith((".config.js", ".config.ts", ".config.mjs", ".config.cjs")):
+        return True
+    return any(seg in _NON_API_TOOLING_DIRS for seg in parts[:-1])
+
+
 def _is_test_file(rel_path: str) -> bool:
     norm = rel_path.replace("\\", "/").lower()
     basename = norm.rsplit("/", 1)[-1]
@@ -233,6 +281,12 @@ def _is_test_file(rel_path: str) -> bool:
             "tests.cs",
             "test.php",
             "tests.php",
+            "tests.swift",
+            "test.swift",
+            "spec.scala",
+            "test.scala",
+            "test.kt",
+            "tests.kt",
         ))
     )
 

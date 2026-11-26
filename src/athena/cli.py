@@ -12,6 +12,7 @@ from importlib import metadata as importlib_metadata
 from pathlib import Path
 
 from athena import __version__
+from athena.ai_providers import SUPPORTED_AI_PROVIDERS, discover_ai_providers
 from athena.evidence_store import DEFAULT_EVIDENCE_STORE
 from athena.gates import check_staged, semver_check
 from athena.html_report import render_html_report
@@ -40,6 +41,7 @@ from athena.symbol_cache import configure_cache
 from athena.token_ledger import get_ledger_status, read_gain_report, reset_gain_ledger
 from athena.treesitter_parser import get_treesitter_status
 from athena.tui import run_interactive_ui
+from athena.verify_fix import detect_available_toolchains, run_closed_loop_repair, verify_fix_state
 
 
 def _print_error(code: str, message: str, *, exit_code: int = 2) -> int:
@@ -78,8 +80,10 @@ def _run_doctor(repo_path: str, cache_dir: str | None) -> dict[str, object]:
 
     repo_diag = inspect_repository(repo_path=repo_path, max_recent_commits=1)
     graph_file_exists = False
+    detected_root: Path | None = None
     if repo_diag.get("is_valid_git_repo") and repo_diag.get("repo_root"):
-        graph_file_exists = (Path(str(repo_diag["repo_root"])) / ".athena" / "graph.json").is_file()
+        detected_root = Path(str(repo_diag["repo_root"]))
+        graph_file_exists = (detected_root / ".athena" / "graph.json").is_file()
 
     runtime_ok = sys.version_info >= (3, 13) and git_ok and mcp_sdk_version != "missing"
     return {
@@ -103,6 +107,8 @@ def _run_doctor(repo_path: str, cache_dir: str | None) -> dict[str, object]:
         "rust_acceleration": rust_status,
         "treesitter": ts_status,
         "token_ledger": ledger_status,
+        "ai_providers": [p.model_dump(mode="json") for p in discover_ai_providers()],
+        "toolchains": detect_available_toolchains(detected_root),
         "evidence_store": {
             "directory": str(ev_dir) if ev_dir is not None else None,
             "writable": ev_dir_writable,
@@ -334,6 +340,39 @@ def main(argv: list[str] | None = None) -> int:
     p_gain.add_argument("--all", action="store_true", help="Aggregate across all recorded repositories")
     p_gain.add_argument("--limit", type=int, default=20, help="Recent entries to return (default: 20)")
     p_gain.add_argument("--reset", action="store_true", help="Reset the local token-savings ledger file")
+
+    # verify-fix command (v1.4.0)
+    p_vfix = sub.add_parser("verify-fix", help="Verify fixes via AST re-audit, local compiler/typechecker, and affected tests")
+    p_vfix.add_argument("repo_path", nargs="?", default=".", help="Path to local Git repository (default: .)")
+    p_vfix.add_argument("--base", default="AUTO", help="Base revision (tag, branch, SHA, or AUTO)")
+    p_vfix.add_argument("--target", default="WORKING_TREE", help="Target revision (default: WORKING_TREE)")
+    p_vfix.add_argument("--no-typecheck", action="store_true", help="Skip compiler/typechecker commands")
+    p_vfix.add_argument("--no-tests", action="store_true", help="Skip affected test execution")
+    p_vfix.add_argument("--max-tests", type=int, default=20, help="Maximum impacted test files to execute (1..100)")
+    p_vfix.add_argument("--timeout", type=int, default=120, help="Command execution timeout in seconds")
+
+    # repair command (v1.4.0)
+    p_rep_ai = sub.add_parser("repair", help="Run closed-loop Athena + AI breaking-change repair and verification")
+    p_rep_ai.add_argument("repo_path", nargs="?", default=".", help="Path to local Git repository (default: .)")
+    p_rep_ai.add_argument("--base", default="AUTO", help="Base revision (tag, branch, SHA, or AUTO)")
+    p_rep_ai.add_argument("--target", default="HEAD", help="Target revision (HEAD, tag, branch, or WORKING_TREE)")
+    p_rep_ai.add_argument(
+        "--provider",
+        choices=list(SUPPORTED_AI_PROVIDERS),
+        default="auto",
+        help="AI repair backend (default: auto)",
+    )
+    p_rep_ai.add_argument("--model", default=None, help="Override provider model tag")
+    p_rep_ai.add_argument("--base-url", default=None, help="Override HTTP API base URL")
+    p_rep_ai.add_argument("--apply", action="store_true", help="Apply verified mechanical and AI patches on disk")
+    p_rep_ai.add_argument("--include-review-required", action="store_true", help="Also apply review_required mechanical patches")
+    p_rep_ai.add_argument("--include-low-confidence", action="store_true", help="Include low-confidence findings")
+    p_rep_ai.add_argument("--max-iterations", type=int, default=2, help="Closed-loop AI verification retries (1..5)")
+    p_rep_ai.add_argument("--no-typecheck", action="store_true", help="Skip compiler/typechecker verification")
+    p_rep_ai.add_argument("--no-tests", action="store_true", help="Skip affected test verification")
+    p_rep_ai.add_argument("--no-rollback", action="store_true", help="Keep edits on disk even if verification fails")
+    p_rep_ai.add_argument("--timeout", type=int, default=120, help="Command/provider timeout in seconds")
+    p_rep_ai.add_argument("--format", choices=["json", "diff"], default="json", help="Output format: json (default) or diff")
 
     args = parser.parse_args(argv)
 
@@ -617,6 +656,55 @@ def main(argv: list[str] | None = None) -> int:
         res = read_gain_report(scope, limit=args.limit)
         print(json.dumps(res, indent=2))
         return 0
+
+    if args.command == "verify-fix":
+        v_res = verify_fix_state(
+            repo_path=args.repo_path,
+            base_ref=args.base,
+            target_ref=args.target,
+            run_typecheck=not args.no_typecheck,
+            run_tests=not args.no_tests,
+            max_test_files=args.max_tests,
+            timeout_sec=args.timeout,
+        ).model_dump(mode="json")
+        print(json.dumps(v_res, indent=2))
+        if v_res.get("status") != "ok":
+            return 2
+        return 0 if v_res.get("verified_ok") else 1
+
+    if args.command == "repair":
+        r_res = run_closed_loop_repair(
+            repo_path=args.repo_path,
+            base_ref=args.base,
+            target_ref=args.target,
+            provider=args.provider,
+            model=args.model,
+            base_url=args.base_url,
+            apply=args.apply,
+            include_review_required=args.include_review_required,
+            include_low_confidence=args.include_low_confidence,
+            max_iterations=args.max_iterations,
+            run_typecheck=not args.no_typecheck,
+            run_tests=not args.no_tests,
+            rollback_on_fail=not args.no_rollback,
+            timeout_sec=args.timeout,
+        ).model_dump(mode="json")
+        if args.format == "diff" and r_res.get("status") == "ok":
+            mech_diffs = [
+                p["unified_diff"]
+                for p in ((r_res.get("mechanical_fix_plan") or {}).get("patches") or [])
+                if p.get("unified_diff")
+            ]
+            ai_diffs = [p["unified_diff"] for p in (r_res.get("ai_patches") or []) if p.get("unified_diff")]
+            all_diffs = [*mech_diffs, *ai_diffs]
+            print("\n".join(all_diffs) if all_diffs else "# No concrete line edits generated (see --format json for repair tasks).")
+        else:
+            print(json.dumps(r_res, indent=2))
+        if r_res.get("status") != "ok":
+            return 2 if str(r_res.get("error_code", "")).startswith(("INVALID_", "EMPTY_", "REPO_", "REVISION_", "AI_PROVIDER_")) else 1
+        if r_res.get("dry_run"):
+            return 0
+        return 0 if r_res.get("verified_ok") else 1
 
     return 0
 

@@ -318,7 +318,7 @@ def test_mcp_resources_prompts_toolsets_titles_and_transport_guards(
 
     async def _run() -> None:
         tools = await mcp_app.list_tools()
-        assert len(tools) == 15
+        assert len(tools) == 18
         supports_title = "title" in inspect.signature(mcp_app.tool).parameters
         if supports_title:
             for tool in tools:
@@ -381,6 +381,7 @@ def test_mcp_resources_prompts_toolsets_titles_and_transport_guards(
             "pre_merge_audit",
             "release_readiness_review",
             "codebase_onboarding",
+            "guided_breaking_fix",
         }
         prompt_res = await mcp_app.get_prompt(
             "pre_merge_audit",
@@ -465,7 +466,7 @@ def test_mcp_resources_prompts_toolsets_titles_and_transport_guards(
                         json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
                     )
                     assert r_tools.status_code == 200
-                    assert len(r_tools.json()["result"]["tools"]) == 15
+                    assert len(r_tools.json()["result"]["tools"]) == 18
                     r_res = await client.post(
                         "/mcp",
                         headers=headers,
@@ -479,7 +480,7 @@ def test_mcp_resources_prompts_toolsets_titles_and_transport_guards(
                         json={"jsonrpc": "2.0", "id": 4, "method": "prompts/list", "params": {}},
                     )
                     assert r_prm.status_code == 200
-                    assert len(r_prm.json()["result"]["prompts"]) == 3
+                    assert len(r_prm.json()["result"]["prompts"]) == 4
 
         asyncio.run(_http_check())
 
@@ -492,7 +493,7 @@ def test_cli_doctor_and_scoped_stdio_session(
     doc = json.loads(capsys.readouterr().out)
     assert doc["athena_version"] == __version__
     assert doc["git"]["available"] is True
-    assert doc["mcp"]["registered_tools"] == 15
+    assert doc["mcp"]["registered_tools"] == 18
     assert doc["repository"]["is_valid_git_repo"] is True
 
     async def _stdio_check() -> None:
@@ -513,7 +514,7 @@ def test_cli_doctor_and_scoped_stdio_session(
                     "inspect_analysis_view",
                 }
                 prompts_res = await session.list_prompts()
-                assert len(prompts_res.prompts) == 3
+                assert len(prompts_res.prompts) == 4
                 res_list = await session.list_resources()
                 assert len(res_list.resources) >= 3
 

@@ -25,21 +25,22 @@ SUPPORTED_AGENTS: tuple[AgentTarget, ...] = (
 
 _CORE_SKILL_MD = """---
 name: athena
-description: Local-first evidence-backed code knowledge graph, breaking-change AST analyzer, and minimal-diff discipline.
+description: Local-first evidence-backed code knowledge graph, breaking-change AST analyzer, multi-language codemods, and closed-loop Athena + AI repair.
 ---
 
 # Athena Agent Protocol
 
 1. Query `get_repo_map` or `query_code_graph` before broad grep/read loops.
 2. Check breaking changes & callers (`detect_potential_breaking_changes` / `athena check --staged`) before finalizing edits.
-3. Reuse existing helpers; never cut security, validation, or error handling; add a test for non-trivial logic.
-4. Mark deliberate deferrals with `# shortcut: <limit>, <when to upgrade>`.
-5. Prefer `detail="summary"` and page via `inspect_analysis_view`.
+3. For broken callers or public API breaks, run `generate_fix_plan` / `prepare_ai_repair_tasks` for bounded slices, edit only `allowed_files`, then close the loop with `verify_fix` until `verified_ok=true`.
+4. Reuse existing helpers; never cut security, validation, or error handling; add a test for non-trivial logic.
+5. Mark deliberate deferrals with `# shortcut: <limit>, <when to upgrade>`.
+6. Prefer `detail="summary"` and page via `inspect_analysis_view`.
 """
 
 _HERMES_PLUGIN_YAML = """name: athena
-version: "1.3.3"
-description: "Athena local-first code graph, repo map, and breaking-change guard for Hermes."
+version: "1.4.0"
+description: "Athena v1.4.0 local-first code graph, multi-language codemods, and closed-loop Athena + AI guard for Hermes."
 entry: "__init__.py"
 hooks:
   - pre_llm_call
@@ -158,22 +159,23 @@ if __name__ == "__main__":
 '''
 
 _CURSOR_RULE_MDC = """---
-description: Athena local-first code graph, repo map, and breaking-change guard
+description: Athena v1.4.0 local-first code graph, multi-language codemods, and Athena + AI verification guard
 alwaysApply: true
 ---
 
 # Athena Agent Protocol
 - Query `get_repo_map` or `query_code_graph` before broad grep/read loops.
 - Run `detect_potential_breaking_changes` / `athena check --staged` before finalizing API changes.
+- Remediate via `generate_fix_plan` + `prepare_ai_repair_tasks` and verify end-to-end with `verify_fix` (`athena verify-fix`).
 - Reuse existing helpers; mark deliberate deferrals with `# shortcut: <limit>, <when to upgrade>`.
 """
 
-_PI_EXTENSION_JS = """// Athena Pi Extension (prompt-cache-stable section injection)
+_PI_EXTENSION_JS = """// Athena v1.4.0 Pi Extension (prompt-cache-stable section injection)
 export default function activate(pi) {
   pi.on("before_agent_start", async (event) => {
     if (event.systemPromptOptions?.sections) {
       event.systemPromptOptions.sections.athena =
-        "Athena: query get_repo_map/query_code_graph first; verify breaking changes before commit; mark deferrals with shortcut:.";
+        "Athena: query get_repo_map/query_code_graph first; run prepare_ai_repair_tasks + verify_fix before commit; mark deferrals with shortcut:.";
     }
   });
 }

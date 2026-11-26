@@ -22,9 +22,11 @@ except ImportError:  # pragma: no cover - fallback for mcp 1.x
 from mcp.types import ToolAnnotations
 
 from athena import __version__
+from athena.ai_providers import SUPPORTED_AI_PROVIDERS, build_ai_repair_tasks, discover_ai_providers
+from athena.ast_analyzer import run_structural_code_analysis
 from athena.debt_tracker import scan_shortcut_debt
 from athena.evidence_store import DEFAULT_EVIDENCE_STORE, resolve_completeness
-from athena.git_inspector import inspect_repository_state
+from athena.git_inspector import extract_revision_range_data, inspect_repository_state
 from athena.graph_query import (
     get_god_nodes,
     get_graph_stats,
@@ -44,10 +46,11 @@ from athena.release_notes import (
 )
 from athena.remediation import generate_fix_plan
 from athena.repo_map import build_repo_map
-from athena.security import AthenaValidationError, redact_secrets
+from athena.security import AthenaValidationError, redact_model, redact_secrets, redact_sensitive_data, validate_repo_path
 from athena.test_selector import predict_affected_tests
 from athena.token_ledger import read_gain_report
 from athena.treesitter_parser import get_treesitter_status
+from athena.verify_fix import detect_available_toolchains, run_closed_loop_repair, verify_fix_state
 
 VALID_TOOLSETS: tuple[str, ...] = (
     "git",
@@ -80,6 +83,10 @@ _REMEDIATION_HINTS: dict[str, tuple[bool, str]] = {
     "INVALID_TRANSPORT": (False, "Choose transport 'stdio' (default) or 'streamable-http'."),
     "INVALID_PORT": (False, "Set port to an integer between 1 and 65535."),
     "REMOTE_BIND_BLOCKED": (False, "Bind to 127.0.0.1/localhost or pass allow_remote=True intentionally."),
+    "INVALID_AI_PROVIDER": (False, f"Choose provider from: {', '.join(SUPPORTED_AI_PROVIDERS)}."),
+    "INVALID_MAX_ITERATIONS": (False, "Set max_iterations between 1 and 5."),
+    "INVALID_MAX_TESTS": (False, "Set max_test_files between 1 and 100."),
+    "AI_PROVIDER_UNAVAILABLE": (True, "Configure the requested provider/CLI/key or use provider='handoff'."),
 }
 
 
@@ -180,13 +187,13 @@ def get_rust_acceleration_status() -> dict[str, Any]:
 
 
 _MCP_INSTRUCTIONS = (
-    f"Athena v{__version__} is an offline-capable, local-first multi-language Git intelligence and AST change analysis MCP server. "
+    f"Athena v{__version__} is an offline-capable, local-first multi-language Git intelligence, AST change analysis, "
+    "codemod remediation, and closed-loop Athena + AI verification MCP server. "
     "Athena is created and maintained by Aaryan Rawat. "
-    "All core operations (Git diff inspection, Python AST analysis, TypeScript/JS, C/C++, Go, Rust, Java, C#, Ruby, and PHP "
-    "structural signature diffing, caller blast-radius scanning, doc drift detection, evidence verification, release notes, "
-    "breaking change detection, resources, and workflow prompts) operate deterministically without requiring any LLM. "
-    "Local Ollama (gemma:latest and qwen2.5-coder:7b) is an optional enhancement when use_llm=True is explicitly enabled. "
-    "Analysis operations are read-only; release tools write only when an output_file is explicitly supplied."
+    "All core operations (Git diff inspection, Python AST analysis, 14-language Tree-sitter signature diffing, "
+    "caller blast-radius scanning, doc drift detection, mechanical codemods, bounded AI repair task extraction, "
+    "closed-loop compiler/test verification, release notes, resources, and workflow prompts) work deterministically offline. "
+    "Optional AI repair supports Claude Code, Codex, Ollama, Hermes, Pi, Cursor, OpenAI-compatible, Anthropic, or zero-key MCP handoff."
 )
 
 
@@ -687,6 +694,147 @@ def get_token_savings_report_tool(
     return read_gain_report(scope, limit=limit)
 
 
+def prepare_ai_repair_tasks_tool(
+    repo_path: str,
+    base_ref: str = "AUTO",
+    target_ref: str = "HEAD",
+    max_tasks: int = 10,
+    context_radius: int = 10,
+    include_low_confidence: bool = False,
+) -> dict[str, Any]:
+    """Extract bounded, secret-redacted caller slices and repair tasks for AI agents."""
+    if isinstance(max_tasks, bool) or not isinstance(max_tasks, int) or max_tasks < 1 or max_tasks > 25:
+        return _error_payload("INVALID_LIMIT", "max_tasks must be an integer between 1 and 25.", error_kind="validation")
+    if isinstance(context_radius, bool) or not isinstance(context_radius, int) or context_radius < 2 or context_radius > 30:
+        return _error_payload("INVALID_LIMIT", "context_radius must be an integer between 2 and 30.", error_kind="validation")
+    try:
+        repo_root = validate_repo_path(repo_path)
+        extraction = extract_revision_range_data(
+            repo_path_input=repo_root,
+            base_ref=str(base_ref or "AUTO"),
+            target_ref=str(target_ref or "HEAD"),
+            max_commits=100,
+        )
+        structural = run_structural_code_analysis(extraction)
+        mech_plan = generate_fix_plan(
+            repo_root,
+            base_ref=extraction.resolved_base_sha,
+            target_ref=extraction.resolved_target_sha,
+            apply=False,
+            include_low_confidence=bool(include_low_confidence),
+        )
+        tests_rep = predict_affected_tests(
+            repo_root,
+            base_ref=extraction.resolved_base_sha,
+            target_ref=extraction.resolved_target_sha,
+            limit=20,
+        )
+        affected_list = [str(item["test_file"]) for item in tests_rep.get("selected_tests", [])]
+        tasks = build_ai_repair_tasks(
+            repo_root,
+            extraction,
+            structural,
+            mech_plan,
+            max_tasks=max_tasks,
+            context_radius=context_radius,
+            include_low_confidence=bool(include_low_confidence),
+            affected_tests=affected_list,
+        )
+        return redact_sensitive_data(
+            {
+                "status": "ok",
+                "repo_path": str(repo_root),
+                "base_ref": extraction.base_ref,
+                "target_ref": extraction.target_ref,
+                "mechanical_safe_patches": mech_plan.safe_patches_count,
+                "total_tasks": len(tasks),
+                "available_providers": [p.model_dump(mode="json") for p in discover_ai_providers()],
+                "tasks": [t.model_dump(mode="json") for t in tasks],
+            }
+        )
+    except AthenaValidationError as exc:
+        return _error_payload(exc.code, exc.message, error_kind="validation")
+    except Exception as exc:
+        return _error_payload(
+            "PREPARE_AI_TASKS_ERROR",
+            f"Unexpected error building AI repair tasks: {_safe_exception_detail(exc)}",
+            error_kind="internal",
+            retryable=True,
+        )
+
+
+def verify_fix_tool(
+    repo_path: str,
+    base_ref: str = "AUTO",
+    target_ref: str = "WORKING_TREE",
+    run_typecheck: bool = True,
+    run_tests: bool = True,
+    max_test_files: int = 20,
+    timeout_sec: int = 120,
+) -> dict[str, Any]:
+    """Re-run Athena AST breaking check, local compiler/typechecker, and affected tests."""
+    try:
+        rep = verify_fix_state(
+            repo_path=repo_path,
+            base_ref=str(base_ref or "AUTO"),
+            target_ref=str(target_ref or "WORKING_TREE"),
+            run_typecheck=bool(run_typecheck),
+            run_tests=bool(run_tests),
+            max_test_files=max_test_files,
+            timeout_sec=timeout_sec,
+        )
+        return _attach_error_recovery(rep.model_dump(mode="json"))
+    except Exception as exc:
+        return _error_payload(
+            "VERIFY_FIX_ERROR",
+            f"Unexpected error during fix verification: {_safe_exception_detail(exc)}",
+            error_kind="internal",
+            retryable=True,
+        )
+
+
+def run_ai_repair_tool(
+    repo_path: str,
+    base_ref: str = "AUTO",
+    target_ref: str = "HEAD",
+    provider: str = "auto",
+    model: str | None = None,
+    base_url: str | None = None,
+    apply: bool = False,
+    include_review_required: bool = False,
+    include_low_confidence: bool = False,
+    max_iterations: int = 2,
+    run_typecheck: bool = True,
+    run_tests: bool = True,
+    rollback_on_fail: bool = True,
+) -> dict[str, Any]:
+    """Run Athena + AI closed-loop repair with automatic compiler/test verification and rollback."""
+    try:
+        rep = run_closed_loop_repair(
+            repo_path=repo_path,
+            base_ref=str(base_ref or "AUTO"),
+            target_ref=str(target_ref or "HEAD"),
+            provider=str(provider or "auto"),
+            model=model,
+            base_url=base_url,
+            apply=bool(apply),
+            include_review_required=bool(include_review_required),
+            include_low_confidence=bool(include_low_confidence),
+            max_iterations=max_iterations,
+            run_typecheck=bool(run_typecheck),
+            run_tests=bool(run_tests),
+            rollback_on_fail=bool(rollback_on_fail),
+        )
+        return _attach_error_recovery(rep.model_dump(mode="json"))
+    except Exception as exc:
+        return _error_payload(
+            "AI_REPAIR_ERROR",
+            f"Unexpected error during closed-loop repair: {_safe_exception_detail(exc)}",
+            error_kind="internal",
+            retryable=True,
+        )
+
+
 _READ_ONLY_LOCAL = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
@@ -877,13 +1025,52 @@ _TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
         "title": "Generate Breaking-Change Fix Plan",
         "category": "analysis",
         "tier": "hot",
-        "summary": "Deterministic dry-run diffs & safe remediation patches.",
+        "summary": "Deterministic dry-run diffs & multi-language codemods.",
         "description": (
-            "Generate deterministic remediation patches (`safe` vs `review_required`) with unified diffs for broken "
-            "Python callers, recursion bugs, unguarded None defaults, stale docstrings, and migration guides. Dry-run by default."
+            "Generate deterministic remediation patches (`safe` vs `review_required`) with unified diffs for multi-line Python "
+            "and multi-language callers, forwarding compat shims, recursion bugs, unguarded None defaults, and docstrings."
         ),
         "annotations": _WRITE_CAPABLE_LOCAL,
         "fn": generate_fix_plan_tool,
+    },
+    {
+        "name": "prepare_ai_repair_tasks",
+        "title": "Prepare Bounded AI Repair Tasks",
+        "category": "analysis",
+        "tier": "hot",
+        "summary": "Extract bounded caller slices for semantic AI repair.",
+        "description": (
+            "Extract minimal, secret-redacted repair tasks containing old/new signatures, allowed_files, +-10-line caller slices, "
+            "and affected tests for any AI agent (Claude Code, Cursor, Codex, Hermes, Pi, Ollama) without dumping full files."
+        ),
+        "annotations": _READ_ONLY_LOCAL,
+        "fn": prepare_ai_repair_tasks_tool,
+    },
+    {
+        "name": "verify_fix",
+        "title": "Verify Fix with Compiler, Tests & AST",
+        "category": "testing",
+        "tier": "hot",
+        "summary": "Verify 0 broken callers, typechecks, and affected tests.",
+        "description": (
+            "Re-run Athena's AST breaking check alongside real local compiler/typecheck gates (py_compile, mypy, pyright, "
+            "go vet, cargo check, tsc, dotnet build) and impacted test execution."
+        ),
+        "annotations": _READ_ONLY_LOCAL,
+        "fn": verify_fix_tool,
+    },
+    {
+        "name": "run_ai_repair",
+        "title": "Run Closed-Loop Athena + AI Repair",
+        "category": "analysis",
+        "tier": "cold",
+        "summary": "Closed-loop codemod + AI repair + verify-fix + rollback.",
+        "description": (
+            "Apply deterministic mechanical codemods, invoke an AI provider (Ollama, Claude Code, Codex, Hermes, Pi, Cursor, "
+            "OpenAI-compatible, Anthropic, or MCP handoff) for remaining semantic breaks, and run verify_fix with rollback on failure."
+        ),
+        "annotations": _WRITE_CAPABLE_LLM,
+        "fn": run_ai_repair_tool,
     },
     {
         "name": "get_token_savings_report",
@@ -1035,6 +1222,23 @@ def _register_resources(
         refreshed = {b["evidence_id"]: b for b in DEFAULT_EVIDENCE_STORE.list_retained()}
         return json.dumps({"status": "ok", **refreshed.get(evidence_id, {"evidence_id": evidence_id})}, indent=2)
 
+    @_call_with_supported_kwargs(
+        server.resource,
+        "athena://ai/providers",
+        name="ai_providers_status",
+        title="Athena + AI Providers & Local Toolchains",
+        description="Available AI backends (Claude Code, Codex, Ollama, Hermes, Pi, Cursor, HTTP APIs) and local compilers.",
+        mime_type="application/json",
+    )
+    def ai_providers_resource() -> str:
+        payload = {
+            "status": "ok",
+            "supported_providers": list(SUPPORTED_AI_PROVIDERS),
+            "providers": [p.model_dump(mode="json") for p in discover_ai_providers()],
+            "toolchains": detect_available_toolchains(Path.cwd()),
+        }
+        return json.dumps(redact_sensitive_data(payload), indent=2)
+
 
 def _register_prompts(server: MCPServer) -> None:
     """Register workflow prompts guiding LLM clients through Athena's deterministic checks."""
@@ -1091,6 +1295,25 @@ def _register_prompts(server: MCPServer) -> None:
             "1. Call `get_repo_map(repo_path)` for the top-level architectural export map.\n"
             "2. Call `query_code_graph(repo_path, query=focus)` to trace god nodes and tightest call communities.\n"
             "3. Call `scan_debt(repo_path, limit=25)` to surface known `# shortcut:` constraints."
+        )
+
+    @_call_with_supported_kwargs(
+        server.prompt,
+        name="guided_breaking_fix",
+        title="Guided Breaking-Change Remediation & Verification Loop",
+        description="Close the loop on breaking changes using mechanical codemods, bounded AI repair slices, and verify_fix.",
+    )
+    def guided_breaking_fix_prompt(
+        repo_path: str = ".",
+        base_ref: str = "AUTO",
+        target_ref: str = "HEAD",
+    ) -> str:
+        return (
+            f"Remediate and verify all breaking changes in `{repo_path}` (`{base_ref}..{target_ref}`):\n"
+            "1. Call `generate_fix_plan(repo_path, base_ref, target_ref, apply=True)` to apply deterministic multi-language codemods.\n"
+            "2. Call `prepare_ai_repair_tasks(repo_path, base_ref, target_ref)` to inspect remaining semantic breaks via bounded +-10-line caller slices.\n"
+            "3. Edit ONLY files inside each task's `allowed_files`, updating callers/tests cleanly for the new contract.\n"
+            "4. Run `verify_fix(repo_path, base_ref, target_ref='WORKING_TREE')` iteratively until `verified_ok=true` (0 broken callers, typecheck + tests green)."
         )
 
 

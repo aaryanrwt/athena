@@ -106,7 +106,7 @@ def test_mcp_server_tool_registration_and_unguarded_none_default(mcp_test_repo: 
         for t in tools:
             assert t.annotations is not None, f"Tool {t.name} missing annotations"
             dumped_ann = t.annotations.model_dump(by_alias=True)
-            if t.name in {"generate_release_notes", "generate_verified_release_brief", "generate_fix_plan"}:
+            if t.name in {"generate_release_notes", "generate_verified_release_brief", "generate_fix_plan", "run_ai_repair"}:
                 assert dumped_ann["readOnlyHint"] is False
                 assert dumped_ann["destructiveHint"] is True
                 assert dumped_ann["idempotentHint"] is False
@@ -124,6 +124,8 @@ def test_mcp_server_tool_registration_and_unguarded_none_default(mcp_test_repo: 
                 "predict_affected_tests",
                 "generate_fix_plan",
                 "get_token_savings_report",
+                "prepare_ai_repair_tasks",
+                "verify_fix",
             }:
                 assert dumped_ann["openWorldHint"] is False
             else:

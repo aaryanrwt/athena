@@ -2,6 +2,26 @@
 
 All notable changes to Athena are recorded here. The project follows semantic versioning.
 
+## 1.4.0
+
+### Added & Fixed
+
+- **Layer 1 — Multi-Language Mechanical Codemods (`src/athena/remediation.py`, `src/athena/treesitter_parser.py`, `src/athena/git_inspector.py`, `src/athena/ast_analyzer.py`)**:
+  - Added exact multi-line Python AST byte-span call rewriting (`_build_py_caller_fixes_for_file`), supporting 1-to-1 symbol renames (including matching `from ... import` updates), keyword argument renames alongside simultaneous optional parameter drops, two-argument positional swaps, and explicit missing-required placeholders (`TODO_REQUIRED_<NAME>`).
+  - Added Tree-sitter `ParsedCallSpan` & `extract_multilang_call_spans()` plus `_extract_multilang_call_spans_fallback()` (`ATHENA_TREESITTER_DISABLE=1`) enabling real unified-diff `caller_update` patches across TypeScript/JS, Go, Rust (including inner calls inside macros such as `assert_eq!(...)` via `_collect_rust_macro_call_entries`), Java, C#, Kotlin, Swift, PHP, and C/C++.
+  - Added insertable forwarding `compat_shim` diffs for Python, TypeScript/JS, Go, and Rust, non-API repository tooling exclusion (`is_non_api_tooling_file` for `noxfile.py`, `setup.py`, `scripts/`, `benchmarks/`, examples, and tool configs), named-argument change tracking for `swift`/`csharp`/`kotlin`/`php`, PHP `$` receiver normalization, Google/NumPy/Sphinx `docstring_sync` (`_extract_docstring_documented_params`), and atomic `capture_file_snapshots()` / `restore_file_snapshots()`.
+- **Layer 2 — Universal "Athena + AI" Provider Bridge (`src/athena/ai_providers.py`)**:
+  - Added bounded per-caller AI repair task generation (`build_ai_repair_tasks`) with persistent token-savings telemetry (`repair_tasks`), zero-key MCP `handoff` support, and direct adapters (`invoke_ai_provider_for_task`) for `claude-code`, `codex`, `ollama` (with thinking disabled for structured patch speed), `hermes`, `pi`, `cursor`, `openai-compat`, `anthropic`, and `auto` provider discovery (`discover_ai_providers`, `resolve_ai_provider`).
+  - Enforced strict safety guards (`_validate_and_convert_ai_edits`): `allowed_files` path jailing, `L<n>:` line-number prefix stripping, `+-3` line-drift snapping, and single-line indentation normalization.
+- **Layer 3 — Closed-Loop Compiler, Test & AST Verification (`src/athena/verify_fix.py`)**:
+  - Added `detect_available_toolchains()` (including `dotnet --list-sdks` SDK verification via `_has_dotnet_sdk()`), `verify_fix_state()` (combining breaking-change AST re-audit, syntax/type/compiler checks across `py_compile`/`mypy`/`pyright`/`go vet`/`cargo check`/`tsc`/`node --check`/`dotnet build`/`php -l`, and impacted tests via `pytest`/`go test`/`cargo test`/`dotnet test`), and `run_closed_loop_repair()` with iterative compiler/test feedback and automatic snapshot rollback on failure.
+- **CLI, MCP Surface & Agent Integrations (`src/athena/cli.py`, `src/athena/mcp_server.py`, `src/athena/agent_installer.py`)**:
+  - Added `athena verify-fix` and `athena repair` CLI subcommands plus `ai_providers` and `toolchains` checks in `athena doctor`.
+  - Expanded the MCP server to `18` registered tools (`prepare_ai_repair_tasks`, `verify_fix`, `run_ai_repair`), `5` static resources (`athena://ai/providers`) + `1` URI template (`athena://evidence/{evidence_id}`), and `4` workflow prompts (`guided_breaking_fix`), with redaction applied on JSON outputs and updated Hermes/Cursor/Pi agent templates (`athena install`).
+- **Verified Test & Live Toolchain Matrix**:
+  - Passed all 3 offline pytest modes (`-m "not ollama"`, `0` failures): Tree-sitter + Rust ON (`202 passed, 1 deselected in 458.68s`), `ATHENA_TREESITTER_DISABLE=1` fallback (`201 passed, 1 skipped, 1 deselected in 257.64s`), and `FAST_ANYTHING_DISABLE=1` pure Python (`202 passed, 1 deselected in 246.08s`).
+  - Verified live local toolchains & Ollama `qwen3:4b`: `python:py_compile` + `pytest` (`post_verified=True`), `go:vet` + `go:test` (`post_verified=True`), `cargo:check` + `cargo:test` including `assert_eq!` macro call (`post_verified=True`), C# patch + `skipped_tool_missing` `.NET SDK` guard, and Ollama `qwen3:4b` patching `checkout.py` (`remaining_broken_callers=0`, `py_compile` passed) before `pytest` caught semantic multiplier mismatch.
+
 ## 1.3.3
 
 ### Added & Fixed

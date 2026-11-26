@@ -369,27 +369,27 @@ FAST_ANYTHING_DISABLE=1 athena graph . --query "auth"
 
 Builds `.fast/ports/*` PyO3 extensions into `.fast/lib/` (transparently falls back to pure Python when unbuilt or when `FAST_ANYTHING_DISABLE=1` is set).
 
-### 18. Cross-Process Evidence Paging, Scoped MCP Server & Diagnostics (`v1.3.2+`, updated `v1.3.3`)
+### 18. Cross-Process Evidence Paging, Scoped MCP Server & Diagnostics (`v1.3.2+`, updated `v1.4.0`)
 
 ```bash
 # Optional: enable Tree-sitter AST parsing across 14 non-Python languages
 pip install -e ".[ast]"
 
-# Verify live Python (>=3.13), Git, MCP SDK, Tree-sitter, Rust kernel, token ledger, and repo state
+# Verify live Python (>=3.13), Git, MCP SDK, Tree-sitter, Rust kernels, ai_providers, toolchains, and repo state
 athena doctor .
 
 # Retain summary evidence on disk and page facets from another terminal session
 athena breaking-changes . --base main --target HEAD --detail summary
 athena view <ev_id> --facet potential_breaking_changes --offset 0 --limit 25
 
-# Run a read-only scoped MCP server over stdio or loopback streamable-http (15 tools total)
+# Run a read-only scoped MCP server over stdio or loopback streamable-http (18 tools total)
 athena mcp --toolsets git,graph,analysis,testing,evidence --read-only
 athena mcp --transport streamable-http --host 127.0.0.1 --port 8765 --read-only
 ```
 
-Persists `ev_<sha256>` evidence bundles atomically under `~/.athena/evidence` (or `$ATHENA_EVIDENCE_DIR`) and exposes 5 MCP Resources/Templates (`athena://server/capabilities`, `athena://repo/map`, `athena://gain/summary`, `athena://evidence/recent`, `athena://evidence/{evidence_id}`) and Guided Prompts (`pre_merge_audit`, `release_readiness_review`, `codebase_onboarding`).
+Persists `ev_<sha256>` evidence bundles atomically under `~/.athena/evidence` (or `$ATHENA_EVIDENCE_DIR`) and exposes 6 MCP Resources/Templates (`athena://server/capabilities`, `athena://repo/map`, `athena://gain/summary`, `athena://evidence/recent`, `athena://ai/providers`, and template `athena://evidence/{evidence_id}`) and 4 Guided Prompts (`pre_merge_audit`, `release_readiness_review`, `codebase_onboarding`, `guided_breaking_fix`).
 
-### 19. Deterministic Auto-Fix Plan & Patch Application (`v1.3.3+`)
+### 19. Deterministic Multi-Language Auto-Fix Plan & Patch Application (`v1.3.3+`, expanded `v1.4.0`)
 
 ```bash
 # Preview unified diffs (default dry-run) classified into safe vs review_required
@@ -399,7 +399,7 @@ athena fix . --base main --target HEAD --format diff
 athena fix . --base main --target HEAD --apply
 ```
 
-Generates deterministic `safe` patches (`recursion_fix`, literal `none_guard`, 1-to-1 Python keyword `caller_update`, `docstring_sync`) and `review_required` remediation (`compat_shim`, `migration_guide`).
+Generates deterministic `safe` patches (`recursion_fix`, literal `none_guard`, multi-line Python AST and Tree-sitter multi-language `caller_update` across TS/JS, Go, Rust including `assert_eq!` macro calls, Java, C#, Kotlin, Swift, PHP, and C/C++, plus Sphinx/Google/NumPy `docstring_sync`) and `review_required` remediation (`compat_shim` forwarding diffs, `migration_guide`), while excluding non-API tooling paths (`noxfile.py`, `setup.py`, `scripts/`, `benchmarks/`).
 
 ### 20. Persistent Local Token-Savings Telemetry (`v1.3.3+`)
 
@@ -411,3 +411,32 @@ athena gain --all --limit 50
 # Reset the local ledger cleanly (~/.athena/gain.jsonl or $ATHENA_GAIN_LOG)
 athena gain --reset
 ```
+
+### 21. Closed-Loop Compiler, Test & AST Verification (`v1.4.0+`)
+
+```bash
+# Re-run AST breaking-change checks + local compilers/typecheckers + affected tests
+athena verify-fix . --base main --target WORKING_TREE
+
+# Customize checks (e.g. skip slow test suite or cap impacted test count)
+athena verify-fix . --base main --target WORKING_TREE --no-tests --timeout 120
+athena verify-fix . --base main --target WORKING_TREE --no-typecheck --max-tests 10
+```
+
+Inspects detected compilers (`py_compile`, `mypy`, `pyright`, `go vet`, `cargo check`, `tsc`, `node --check`, `dotnet build` with SDK verification, `php -l`), runs impacted tests (`pytest`, `go test`, `cargo test`, `dotnet test`), and re-audits breaking changes and broken callers.
+
+### 22. Athena + AI Closed-Loop Repair (`v1.4.0+`)
+
+```bash
+# Generate bounded zero-key MCP handoff tasks without invoking an external model
+athena repair . --base main --target WORKING_TREE --provider handoff
+
+# Run full closed-loop repair: mechanical codemods -> AI caller patches -> compiler & test verification
+athena repair . --base main --target WORKING_TREE --provider auto --apply
+
+# Select any supported provider explicitly (or preview unified diff before writing)
+athena repair . --base main --target WORKING_TREE --provider claude-code --format diff
+athena repair . --base main --target WORKING_TREE --provider ollama --model qwen3:4b --apply --max-iterations 3 --no-rollback
+```
+
+Supports `auto`, `handoff`, `ollama`, `openai-compat`, `anthropic`, `claude-code`, `codex`, `hermes`, `pi`, and `cursor`, plus `--base-url`, `--include-review-required`, `--include-low-confidence`, `--no-typecheck`, `--no-tests`, and automatic snapshot rollback when verification does not pass.
