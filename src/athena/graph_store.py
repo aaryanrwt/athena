@@ -11,6 +11,7 @@ import ast
 import hashlib
 import json
 import os
+import re
 import threading
 from collections import defaultdict
 from pathlib import Path
@@ -46,7 +47,20 @@ _GRAPH_SCHEMA_VERSION = 1
 
 _TEST_PATH_MARKERS = ("tests/", "test/", "__tests__/", "spec/", "specs/")
 _TEST_FILE_PREFIXES = ("test_", "spec_")
-_TEST_FILE_SUFFIXES = ("_test.py", ".test.ts", ".test.tsx", ".test.js", ".spec.ts", ".spec.js", "_test.go", "_test.rs")
+_TEST_FILE_SUFFIXES = (
+    "_test.py",
+    ".test.ts",
+    ".test.tsx",
+    ".test.js",
+    ".spec.ts",
+    ".spec.js",
+    "_test.go",
+    "_test.rs",
+    "tests.swift",
+    "test.swift",
+    "spec.scala",
+    "test.scala",
+)
 _UTILITY_NAMES = frozenset({"cn", "clsx", "noop", "identity", "main", "setup", "teardown", "__init__", "__repr__", "__str__"})
 
 _LANG_BY_EXT: dict[str, str] = {
@@ -64,6 +78,8 @@ _LANG_BY_EXT: dict[str, str] = {
     ".rs": "rust",
     ".java": "java",
     ".kt": "kotlin",
+    ".scala": "scala",
+    ".swift": "swift",
     ".rb": "ruby",
     ".php": "php",
     ".cs": "csharp",
@@ -85,6 +101,8 @@ _LANG_FAMILY: dict[str, str] = {
     "rust": "rust",
     "java": "jvm",
     "kotlin": "jvm",
+    "scala": "jvm",
+    "swift": "swift",
     "ruby": "ruby",
     "php": "php",
     "csharp": "dotnet",
@@ -92,6 +110,21 @@ _LANG_FAMILY: dict[str, str] = {
     "cpp": "c_cpp",
     "cuda": "c_cpp",
     "tex": "tex",
+}
+
+_EXTRA_GRAPH_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    "swift": (
+        re.compile(r"^\s*(?:(?:public|open|internal|fileprivate|private|static|class|final|override|mutating|@inlinable|@preconcurrency)\s+)*func\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]"),
+        re.compile(r"^\s*(?:(?:public|open|internal|fileprivate|private|final)\s+)*(?:class|struct|enum|protocol|actor)\s+([A-Za-z_][A-Za-z0-9_]*)"),
+    ),
+    "scala": (
+        re.compile(r"^\s*(?:(?:public|protected|private|override|final|implicit|inline)\s+)*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*[\[(]"),
+        re.compile(r"^\s*(?:(?:public|protected|private|sealed|abstract|final|case)\s+)*(?:class|trait|object|enum)\s+([A-Za-z_][A-Za-z0-9_]*)"),
+    ),
+}
+_EXTRA_IMPORT_PATTERNS: dict[str, re.Pattern[str]] = {
+    "swift": re.compile(r"^\s*(?:@_[A-Za-z]+\s+)?import\s+([A-Za-z0-9_.]+)"),
+    "scala": re.compile(r"^\s*import\s+([A-Za-z0-9_.]+)"),
 }
 
 
@@ -153,9 +186,11 @@ def _should_skip_rel_path(rel_path: str) -> bool:
     norm = rel_path.replace("\\", "/").lstrip("./")
     if not norm or norm.startswith(".athena/") or norm.startswith(".fast/") or norm.startswith("private/"):
         return True
-    if Path(norm).name in LOCKFILE_AND_GENERATED_NAMES:
+    low = norm.lower()
+    if Path(low).name in LOCKFILE_AND_GENERATED_NAMES:
         return True
-    return any(norm.startswith(prefix) for prefix in IGNORED_DIR_PREFIXES)
+    wrapped = f"/{low}"
+    return any(low.startswith(prefix) or f"/{prefix}" in wrapped for prefix in IGNORED_DIR_PREFIXES)
 
 
 def _collect_tracked_source_files(repo_root: Path) -> list[Path]:
@@ -449,7 +484,29 @@ def _extract_structural_file_graph(
     seen_syms: set[str] = set()
     unknowns: list[ResidualUnknownRecord] = []
 
-    raw_symbols, import_targets, php_dynamic_lines = extract_structural_symbols_raw(language, source)
+    if language in _EXTRA_GRAPH_PATTERNS:
+        raw_symbols: list[tuple[str, int]] = []
+        import_targets: list[str] = []
+        php_dynamic_lines: list[int] = []
+        extra_pats = _EXTRA_GRAPH_PATTERNS[language]
+        extra_imp = _EXTRA_IMPORT_PATTERNS.get(language)
+        for idx, line in enumerate(source.splitlines(), start=1):
+            if len(line) > 512:
+                continue
+            stripped = line.lstrip()
+            if not stripped or stripped.startswith(("//", "#", "/*", "*")):
+                continue
+            if extra_imp is not None:
+                m_imp = extra_imp.match(line)
+                if m_imp:
+                    import_targets.append(m_imp.group(1))
+            for pat in extra_pats:
+                m_sym = pat.match(line)
+                if m_sym and m_sym.group(1):
+                    raw_symbols.append((m_sym.group(1), idx))
+                    break
+    else:
+        raw_symbols, import_targets, php_dynamic_lines = extract_structural_symbols_raw(language, source)
 
     for imp_tgt in import_targets:
         call_hints.append({"source": mod_id, "target_name": imp_tgt, "relation": "imports", "lang": language})

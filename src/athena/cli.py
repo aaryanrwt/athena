@@ -28,6 +28,7 @@ from athena.mcp_server import (
     run_mcp_stdio_server,
 )
 from athena.mcp_config import render_mcp_config, write_mcp_config
+from athena.remediation import generate_fix_plan
 from athena.sarif import breaking_report_to_sarif
 from athena.security import (
     AthenaValidationError,
@@ -36,6 +37,8 @@ from athena.security import (
     write_text_safely,
 )
 from athena.symbol_cache import configure_cache
+from athena.token_ledger import get_ledger_status, read_gain_report, reset_gain_ledger
+from athena.treesitter_parser import get_treesitter_status
 from athena.tui import run_interactive_ui
 
 
@@ -62,6 +65,8 @@ def _run_doctor(repo_path: str, cache_dir: str | None) -> dict[str, object]:
         mcp_sdk_version = "missing"
 
     rust_status = get_rust_acceleration_status()
+    ts_status = get_treesitter_status()
+    ledger_status = get_ledger_status()
     ev_dir = DEFAULT_EVIDENCE_STORE._storage_dir()
     ev_dir_writable = False
     if ev_dir is not None:
@@ -76,14 +81,14 @@ def _run_doctor(repo_path: str, cache_dir: str | None) -> dict[str, object]:
     if repo_diag.get("is_valid_git_repo") and repo_diag.get("repo_root"):
         graph_file_exists = (Path(str(repo_diag["repo_root"])) / ".athena" / "graph.json").is_file()
 
-    runtime_ok = sys.version_info >= (3, 12) and git_ok and mcp_sdk_version != "missing"
+    runtime_ok = sys.version_info >= (3, 13) and git_ok and mcp_sdk_version != "missing"
     return {
         "status": "ok" if runtime_ok else "error",
         "athena_version": __version__,
         "python": {
             "version": platform.python_version(),
             "executable": sys.executable,
-            "supported": sys.version_info >= (3, 12),
+            "supported": sys.version_info >= (3, 13),
         },
         "git": {
             "available": git_ok,
@@ -96,6 +101,8 @@ def _run_doctor(repo_path: str, cache_dir: str | None) -> dict[str, object]:
             "transports": list(VALID_TRANSPORTS),
         },
         "rust_acceleration": rust_status,
+        "treesitter": ts_status,
+        "token_ledger": ledger_status,
         "evidence_store": {
             "directory": str(ev_dir) if ev_dir is not None else None,
             "writable": ev_dir_writable,
@@ -307,9 +314,26 @@ def main(argv: list[str] | None = None) -> int:
     p_tests.add_argument("--offset", type=int, default=0, help="Start item offset (default: 0)")
     p_tests.add_argument("--limit", type=int, default=None, help="Maximum tests to return (1..500)")
 
-    # doctor command (v1.3.2)
-    p_doc = sub.add_parser("doctor", help="Check Python, Git, MCP SDK, Rust kernel, cache, and repo readiness")
+    # doctor command (v1.3.2+)
+    p_doc = sub.add_parser("doctor", help="Check Python, Git, MCP SDK, Rust kernel, Tree-sitter, cache, and repo readiness")
     p_doc.add_argument("repo_path", nargs="?", default=".", help="Optional local repository path to inspect (default: .)")
+
+    # fix command (v1.3.3)
+    p_fix = sub.add_parser("fix", help="Generate deterministic remediation patches and unified diffs (dry-run default)")
+    p_fix.add_argument("repo_path", nargs="?", default=".", help="Path to local Git repository (default: .)")
+    p_fix.add_argument("--base", default="AUTO", help="Base revision (tag, branch, SHA, or AUTO)")
+    p_fix.add_argument("--target", default="HEAD", help="Target revision (HEAD, tag, branch, or WORKING_TREE)")
+    p_fix.add_argument("--apply", action="store_true", help="Apply non-overlapping safe patches atomically on disk")
+    p_fix.add_argument("--include-review-required", action="store_true", help="Also apply review_required patches when --apply is set")
+    p_fix.add_argument("--include-low-confidence", action="store_true", help="Include low-confidence findings")
+    p_fix.add_argument("--format", choices=["json", "diff"], default="json", help="Output format: json (default) or diff")
+
+    # gain command (v1.3.3)
+    p_gain = sub.add_parser("gain", help="Show measured raw vs compacted context/token savings across Athena runs")
+    p_gain.add_argument("repo_path", nargs="?", default=".", help="Optional local repository path filter (default: .)")
+    p_gain.add_argument("--all", action="store_true", help="Aggregate across all recorded repositories")
+    p_gain.add_argument("--limit", type=int, default=20, help="Recent entries to return (default: 20)")
+    p_gain.add_argument("--reset", action="store_true", help="Reset the local token-savings ledger file")
 
     args = parser.parse_args(argv)
 
@@ -565,6 +589,34 @@ def main(argv: list[str] | None = None) -> int:
         diag = _run_doctor(args.repo_path, cache_dir)
         print(json.dumps(diag, indent=2))
         return 0 if diag.get("status") == "ok" else 1
+
+    if args.command == "fix":
+        res = generate_fix_plan(
+            repo_path=args.repo_path,
+            base_ref=args.base,
+            target_ref=args.target,
+            apply=args.apply,
+            include_review_required=args.include_review_required,
+            include_low_confidence=args.include_low_confidence,
+        ).model_dump(mode="json")
+        if args.format == "diff" and res.get("status") == "ok":
+            diffs = [p["unified_diff"] for p in res.get("patches", []) if p.get("unified_diff")]
+            print("\n".join(diffs) if diffs else "# No concrete line edits generated (see --format json for migration guides).")
+        else:
+            print(json.dumps(res, indent=2))
+        return 0 if res.get("status") == "ok" else 1
+
+    if args.command == "gain":
+        if args.reset:
+            out = reset_gain_ledger()
+            print(json.dumps(out, indent=2))
+            return 0 if out.get("status") == "ok" else 1
+        if isinstance(args.limit, bool) or args.limit < 1 or args.limit > 200:
+            return _print_error("INVALID_LIMIT", "limit must be an integer between 1 and 200.", exit_code=2)
+        scope = None if args.all else args.repo_path
+        res = read_gain_report(scope, limit=args.limit)
+        print(json.dumps(res, indent=2))
+        return 0
 
     return 0
 

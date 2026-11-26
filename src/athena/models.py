@@ -113,6 +113,8 @@ class SymbolSignatureChange(BaseModel):
     is_breaking_candidate: bool = False
     is_public_api_export: bool = False
     public_api_exposure_reason: str = ""
+    api_surface: Literal["public_external", "internal_only", "unknown"] = "unknown"
+    language_family: str = ""
     severity: Literal["high", "medium", "low"] = "medium"
     details: str = ""
     base_line_span: LineSpan | None = None
@@ -165,6 +167,10 @@ class AnalysisCoverageReport(BaseModel):
     callers_with_arity_mismatch_count: int = 0
     unresolved_dynamic_calls_count: int = 0
     public_api_exports_modified_count: int = 0
+    parser_backend: str = "python_ast+structural_fallback"
+    files_omitted_count: int = 0
+    truncated: bool = False
+    full_repo_prefilter_used: bool = False
     overall_blast_radius_confidence: ConfidenceLevel = "high"
     confidence_rationale: str = (
         "100% of eligible internal source files parsed statically with zero unresolved dynamic calls."
@@ -242,10 +248,13 @@ class PotentialBreakingChangeFinding(BaseModel):
     new_signature: str | None = None
     is_public_api_export: bool = False
     public_api_exposure_reason: str = ""
+    api_surface: Literal["public_external", "internal_only", "unknown"] = "unknown"
+    language_family: str = ""
     observed_facts: list[str] = Field(default_factory=list)
     model_interpretation: str = ""
     potential_risks_requiring_verification: list[str] = Field(default_factory=list)
     affected_callers: list[CallerImpactItem] = Field(default_factory=list)
+    total_callers_matched: int = 0
     unresolved_dynamic_calls: list[UnresolvedDynamicCallItem] = Field(default_factory=list)
     doc_drift: list[DocDriftItem] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)

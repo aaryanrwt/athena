@@ -38,14 +38,14 @@ jobs:
       - name: Install Athena & Test Dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          python -m pip install -e ".[dev,ast]"
 
       - name: Configure Git Identity for Test Sandbox Repos
         run: |
           git config --global user.name "athena-ci"
           git config --global user.email "athena-ci@users.noreply.github.com"
 
-      - name: Run Full Offline Test Suite (Unit, MCP, v1.2-v1.3.2, Release & Rust Parity)
+      - name: Run Full Offline Test Suite (Unit, MCP, v1.2-v1.3.3, Release & Rust Parity)
         run: python -m pytest -v -m "not ollama" --ignore=tests/evaluation
 
       - name: Validate Wheel Build

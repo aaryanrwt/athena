@@ -42,9 +42,12 @@ from athena.release_notes import (
     run_git_history_analysis,
     run_release_notes_generation,
 )
+from athena.remediation import generate_fix_plan
 from athena.repo_map import build_repo_map
 from athena.security import AthenaValidationError, redact_secrets
 from athena.test_selector import predict_affected_tests
+from athena.token_ledger import read_gain_report
+from athena.treesitter_parser import get_treesitter_status
 
 VALID_TOOLSETS: tuple[str, ...] = (
     "git",
@@ -640,6 +643,50 @@ def discover_tools_tool(
     }
 
 
+def generate_fix_plan_tool(
+    repo_path: str,
+    base_ref: str = "AUTO",
+    target_ref: str = "HEAD",
+    apply: bool = False,
+    include_review_required: bool = False,
+    include_low_confidence: bool = False,
+) -> dict[str, Any]:
+    """Plan and optionally apply deterministic patches for breaking changes and doc drift."""
+    try:
+        return generate_fix_plan(
+            repo_path=repo_path,
+            base_ref=str(base_ref or "AUTO"),
+            target_ref=str(target_ref or "HEAD"),
+            apply=bool(apply),
+            include_review_required=bool(include_review_required),
+            include_low_confidence=bool(include_low_confidence),
+        ).model_dump(mode="json")
+    except AthenaValidationError as exc:
+        return _error_payload(exc.code, exc.message, error_kind="validation")
+    except Exception as exc:
+        return _error_payload(
+            "FIX_PLAN_ERROR",
+            f"Unexpected error generating fix plan: {_safe_exception_detail(exc)}",
+            error_kind="internal",
+            retryable=True,
+        )
+
+
+def get_token_savings_report_tool(
+    repo_path: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Return persistent local telemetry tracking raw vs compacted token output."""
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 200:
+        return _error_payload(
+            "INVALID_LIMIT",
+            "Parameter 'limit' must be an integer between 1 and 200.",
+            error_kind="validation",
+        )
+    scope = str(repo_path).strip() if isinstance(repo_path, str) and repo_path.strip() else None
+    return read_gain_report(scope, limit=limit)
+
+
 _READ_ONLY_LOCAL = ToolAnnotations(
     readOnlyHint=True,
     destructiveHint=False,
@@ -651,6 +698,12 @@ _READ_ONLY_LLM = ToolAnnotations(
     destructiveHint=False,
     idempotentHint=True,
     openWorldHint=True,
+)
+_WRITE_CAPABLE_LOCAL = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=False,
+    openWorldHint=False,
 )
 _WRITE_CAPABLE_LLM = ToolAnnotations(
     readOnlyHint=False,
@@ -820,6 +873,31 @@ _TOOL_REGISTRY: tuple[dict[str, Any], ...] = (
         "fn": generate_verified_release_brief,
     },
     {
+        "name": "generate_fix_plan",
+        "title": "Generate Breaking-Change Fix Plan",
+        "category": "analysis",
+        "tier": "hot",
+        "summary": "Deterministic dry-run diffs & safe remediation patches.",
+        "description": (
+            "Generate deterministic remediation patches (`safe` vs `review_required`) with unified diffs for broken "
+            "Python callers, recursion bugs, unguarded None defaults, stale docstrings, and migration guides. Dry-run by default."
+        ),
+        "annotations": _WRITE_CAPABLE_LOCAL,
+        "fn": generate_fix_plan_tool,
+    },
+    {
+        "name": "get_token_savings_report",
+        "title": "Get Token Savings Ledger",
+        "category": "meta",
+        "tier": "hot",
+        "summary": "Inspect measured raw vs compacted context savings.",
+        "description": (
+            "Read Athena's local append-only token-savings ledger (`athena gain`), aggregated globally or scoped to a repository."
+        ),
+        "annotations": _READ_ONLY_LOCAL,
+        "fn": get_token_savings_report_tool,
+    },
+    {
         "name": "discover_tools",
         "title": "Discover Athena MCP Tools",
         "category": "meta",
@@ -884,9 +962,21 @@ def _register_resources(
             "read_only": read_only,
             "registered_tools": list(registered_tools),
             "rust_acceleration": get_rust_acceleration_status(),
+            "treesitter": get_treesitter_status(),
             "retained_evidence_count": len(DEFAULT_EVIDENCE_STORE.list_retained()),
         }
         return json.dumps(payload, indent=2)
+
+    @_call_with_supported_kwargs(
+        server.resource,
+        "athena://gain/summary",
+        name="token_savings_summary",
+        title="Athena Token Savings Summary",
+        description="Aggregated raw vs compacted character/token savings recorded across Athena runs.",
+        mime_type="application/json",
+    )
+    def token_savings_summary_resource() -> str:
+        return json.dumps(read_gain_report(), indent=2)
 
     @_call_with_supported_kwargs(
         server.resource,

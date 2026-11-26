@@ -122,6 +122,7 @@ def run_git_command(
     args: list[str],
     timeout: int = 30,
     check: bool = True,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute a read-only Git command with argument list (shell=False) and UTF-8 decoding."""
     cmd = [
@@ -142,6 +143,7 @@ def run_git_command(
         proc = subprocess.run(  # nosec B603
             cmd,
             cwd=str(repo_path),
+            input=input_text,
             shell=False,
             capture_output=True,
             text=True,
@@ -157,6 +159,13 @@ def run_git_command(
                 f"Git command timed out after {timeout}s ({' '.join(args[:3])}).",
             )
         return subprocess.CompletedProcess(cmd, returncode=124, stdout="", stderr=f"Timed out after {timeout}s")
+    except OSError as exc:
+        if check:
+            raise AthenaValidationError(
+                "GIT_COMMAND_FAILED",
+                f"Git command failed ({' '.join(args[:3])}): {exc}",
+            )
+        return subprocess.CompletedProcess(cmd, returncode=127, stdout="", stderr=str(exc))
 
     if check and proc.returncode != 0:
         stderr_clean = redact_secrets((proc.stderr or proc.stdout or "").strip())
@@ -167,14 +176,27 @@ def run_git_command(
     return proc
 
 
+def decode_bytes_safely(raw: bytes) -> str:
+    """Decode arbitrary repository bytes gracefully across UTF-8, BOM, cp1252, and latin-1."""
+    if not raw:
+        return ""
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return raw.decode(enc).replace("\r\n", "\n")
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace").replace("\r\n", "\n")
+
+
 def _is_lockfile_or_generated(rel_path: str) -> bool:
-    norm = rel_path.replace("\\", "/").lower()
+    norm = rel_path.replace("\\", "/").lower().lstrip("./")
     basename = norm.rsplit("/", 1)[-1]
     if basename in LOCKFILE_AND_GENERATED_NAMES:
         return True
     if norm.endswith((".min.js", ".min.css", ".map", ".lock", ".pb.go", "_pb2.py")):
         return True
-    return any(norm.startswith(prefix) for prefix in IGNORED_DIR_PREFIXES)
+    wrapped = f"/{norm}"
+    return any(norm.startswith(prefix) or f"/{prefix}" in wrapped for prefix in IGNORED_DIR_PREFIXES)
 
 
 def _is_test_file(rel_path: str) -> bool:
@@ -485,7 +507,7 @@ def resolve_revision_sha(repo_path: Path, rev: str, param_name: str) -> str:
 
 
 def read_blob_at_revision(repo_path: Path, rev_sha: str, file_path: str) -> str | None:
-    """Read a file's UTF-8 text at a specific commit SHA or from WORKING_TREE safely."""
+    """Read source text safely (UTF-8/cp1252/latin-1) at a commit SHA or from WORKING_TREE."""
     norm_path = file_path.replace("\\", "/")
     if rev_sha == "WORKING_TREE":
         candidate = repo_path / norm_path
@@ -496,7 +518,7 @@ def read_blob_at_revision(repo_path: Path, rev_sha: str, file_path: str) -> str 
         if candidate.stat().st_size > MAX_SOURCE_BLOB_BYTES:
             return None
         try:
-            return candidate.read_text(encoding="utf-8", errors="replace")
+            return decode_bytes_safely(candidate.read_bytes())
         except OSError:
             return None
 
@@ -510,14 +532,22 @@ def read_blob_at_revision(repo_path: Path, rev_sha: str, file_path: str) -> str 
     if int(size_proc.stdout.strip()) > MAX_SOURCE_BLOB_BYTES:
         return None
 
-    blob_proc = run_git_command(
-        repo_path,
-        ["show", f"{rev_sha}:{norm_path}"],
-        check=False,
-    )
+    git_env = _build_git_env()
+    try:
+        blob_proc = subprocess.run(  # nosec B603
+            ["git", "-c", "core.quotePath=false", "cat-file", "blob", f"{rev_sha}:{norm_path}"],
+            cwd=str(repo_path),
+            shell=False,
+            capture_output=True,
+            text=False,
+            timeout=30,
+            env=git_env,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if blob_proc.returncode != 0:
         return None
-    return blob_proc.stdout
+    return decode_bytes_safely(blob_proc.stdout)
 
 
 def read_blobs_at_revision(
@@ -527,7 +557,7 @@ def read_blobs_at_revision(
     *,
     max_bytes: int = MAX_SOURCE_BLOB_BYTES,
 ) -> dict[str, str]:
-    """Batch-read multiple UTF-8 source blobs at a commit SHA using two `git cat-file` calls."""
+    """Batch-read multiple source blobs at a commit SHA using two `git cat-file` calls."""
     unique_paths: list[str] = []
     seen: set[str] = set()
     for raw_path in file_paths:
@@ -552,7 +582,7 @@ def read_blobs_at_revision(
             try:
                 if candidate.stat().st_size > max_bytes:
                     continue
-                result[norm] = candidate.read_text(encoding="utf-8", errors="replace")
+                result[norm] = decode_bytes_safely(candidate.read_bytes())
             except OSError:
                 continue
         return result
@@ -619,14 +649,82 @@ def read_blobs_at_revision(
         if len(parts) == 3 and parts[1] == "blob" and parts[2].isdigit():
             size = int(parts[2])
             if size <= max_bytes and pos + size <= data_len:
-                text = raw_out[pos : pos + size].decode("utf-8", errors="replace")
-                result[path] = text.replace("\r\n", "\n")
+                result[path] = decode_bytes_safely(raw_out[pos : pos + size])
             pos += size + 1
         elif len(parts) >= 3 and parts[-1].isdigit():
             size = int(parts[-1])
             pos += size + 1
 
     return result
+
+
+def git_grep_matching_files(
+    repo_path: Path,
+    rev_sha: str,
+    fixed_terms: list[str],
+    *,
+    regex_patterns: list[str] | None = None,
+    timeout: int = 20,
+) -> set[str] | None:
+    """Prefilter repository paths using fast native `git grep -I -l` at ``rev_sha``.
+
+    Returns matched repository-relative POSIX paths, or ``None`` if prefiltering
+    could not be completed reliably so callers can fall back to direct scanning.
+    """
+    if _is_promisor_partial_clone(repo_path):
+        # Never force lazy fetches in blobless partial clones.
+        return None
+
+    clean_terms = [
+        t
+        for t in dict.fromkeys(fixed_terms)
+        if t and "\x00" not in t and "\n" not in t and "\r" not in t
+    ]
+    clean_regex = [
+        p
+        for p in dict.fromkeys(regex_patterns or ())
+        if p and "\x00" not in p and "\n" not in p and "\r" not in p
+    ]
+    if not clean_terms and not clean_regex:
+        return set()
+
+    matched: set[str] = set()
+    target_tree_args = [] if rev_sha == "WORKING_TREE" else [rev_sha]
+    prefix = f"{rev_sha}:" if rev_sha != "WORKING_TREE" else ""
+
+    def _run_batch(mode_flag: str, patterns: list[str]) -> bool:
+        if not patterns:
+            return True
+        cmd: list[str] = ["grep", "-I", "-l", mode_flag, "-f", "-"]
+        if target_tree_args:
+            cmd.extend(target_tree_args)
+        cmd.append("--")
+        proc = run_git_command(
+            repo_path,
+            cmd,
+            timeout=timeout,
+            check=False,
+            input_text="\n".join(patterns) + "\n",
+        )
+        if proc.returncode not in (0, 1):
+            return False
+        if proc.returncode == 0:
+            for raw_ln in proc.stdout.splitlines():
+                ln = raw_ln.strip()
+                if not ln:
+                    continue
+                if prefix and ln.startswith(prefix):
+                    ln = ln[len(prefix) :]
+                ln = ln.replace("\\", "/")
+                if ln:
+                    matched.add(ln)
+        return True
+
+    if clean_terms and not _run_batch("-F", clean_terms):
+        return None
+    if clean_regex and not _run_batch("-E", clean_regex):
+        return None
+    return matched
 
 
 def _parse_unified_diff_by_file(diff_text: str) -> dict[str, tuple[list[ParsedHunk], int, int, bool]]:
@@ -910,12 +1008,17 @@ def extract_revision_range_data(
 
         if not file_ev_ids:
             eid = _next_ev_id()
+            crlf_or_mode_only = status_lit == "modified" and ins == 0 and dels == 0
             evidence_registry[eid] = EvidenceRecord(
                 evidence_id=eid,
                 commit_hash=c_hash,
                 commit_message=c_subj,
                 file_path=file_path,
-                reason_supports_finding=f"File {file_path} was {status_lit} in revision range.",
+                reason_supports_finding=(
+                    f"File {file_path} had line-ending (CRLF/LF) or file-mode changes only (zero semantic diff)."
+                    if crlf_or_mode_only
+                    else f"File {file_path} was {status_lit} in revision range."
+                ),
                 confidence="high",
             )
             file_ev_ids.append(eid)
@@ -924,10 +1027,11 @@ def extract_revision_range_data(
         if len(joined_diff) > MAX_BOUNDED_DIFF_CHARS:
             joined_diff = joined_diff[:MAX_BOUNDED_DIFF_CHARS] + "\n... [file diff bounded]"
 
-        # Read source blobs only for prioritized non-test code files to prevent doc/test starvation (BUG-031)
+        # Read source blobs only for prioritized non-test code files with real line deltas (BUG-031 / CRLF guard)
         can_load_ast_blob = (
             file_path in selected_ast_code_paths
             and (not is_partial or file_path in batched_partial_paths)
+            and not (status_lit == "modified" and ins == 0 and dels == 0 and not hunks)
         )
         if can_load_ast_blob:
             if status_lit in ("modified", "deleted", "renamed"):
@@ -940,7 +1044,7 @@ def extract_revision_range_data(
                         try:
                             st = wt_candidate.stat()
                             if st.st_size <= MAX_SOURCE_BLOB_BYTES:
-                                target_blobs[file_path] = wt_candidate.read_text(encoding="utf-8", errors="replace")
+                                target_blobs[file_path] = decode_bytes_safely(wt_candidate.read_bytes())
                                 working_tree_stats[file_path] = (st.st_mtime_ns, st.st_size)
                         except OSError:
                             pass

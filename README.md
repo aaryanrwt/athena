@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="#before-vs-after-rust-integration">
-    <img alt="Athena Telemetry: 100% Offline 0-LLM, Python 3.13-3.15 + Rust, stdio 13 MCP Tools, 14 Languages, Up to 26.7x Graph Speedup" src="assets/athena-pills-white.svg" width="100%" />
+  <a href="#v133-10-language-1000-commit-audit--auto-fix-benchmark">
+    <img alt="Athena Telemetry: 100% Offline 0-LLM, Python 3.13-3.15 + Rust, stdio 15 MCP Tools, Tree-sitter + Graph across 14+ Languages, Deterministic Auto-Fix" src="assets/athena-pills-white.svg" width="100%" />
   </a>
 </p>
 
@@ -25,12 +25,12 @@
   <a href="https://hub.xerj.org/contributors/aaryanrwt"><img alt="XERJ Corpus Hub contributor" src="https://hub.xerj.org/contributors/aaryanrwt/badge.svg" height="20" /></a>
 </p>
 
-Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP server). It runs offline on your machine—no cloud APIs or vector databases required—to help both developers and AI coding agents:
+Athena (`v1.3.3`) is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP server). It runs offline on your machine—no cloud APIs or vector databases required—to help both developers and AI coding agents:
 
-1. **Catch breaking changes before you merge** (renamed/removed symbols, parameter shifts, unguarded `None` defaults, unit-shift hints, recursion bugs, and broken callers).
-2. **Map and query any codebase in seconds** (`athena graph` & `athena map`), cutting agent token usage by **49x–81,438x** on real repositories.
-3. **Predict affected tests & track technical debt** (`athena affected-tests` for pytest/Playwright + `athena debt` for `# shortcut:` markers).
-4. **Plug into any AI coding agent** (`athena install`)—Hermes, OpenClaw, Claude Code, Codex, Cursor, and Pi—with safe, backed-up configs and optional **Hybrid Rust acceleration**.
+1. **Catch breaking changes with Tree-sitter & Python AST precision** (removed/signature-changed symbols, unguarded `None` defaults, unit-shift hints, recursion bugs, full-repo `git grep` caller blast radius, and `internal_only` vs `public_external` surface separation).
+2. **Generate & safely apply deterministic fixes (`athena fix`)** (unified diffs tagged `safe` vs `review_required` for recursion fixes, literal `None` fallback guards, 1-to-1 Python keyword caller updates, docstring tag sync, shims, and migration guides).
+3. **Map, query, and track token savings (`athena graph`, `athena map`, `athena gain`)** across Python, TypeScript/JS, Go, Rust, C/C++, C#, Java, Kotlin, Scala, Swift, Ruby, PHP, CUDA, and TeX—cutting raw repository context by **up to 99.95% (`44.2M` tokens saved across 10 enterprise repos)**.
+4. **Predict affected tests, track technical debt, and plug into any AI coding agent** (`athena affected-tests`, `athena debt`, `athena install` for Hermes, OpenClaw, Claude Code, Codex, Cursor, and Pi) with optional **Hybrid Rust acceleration**.
 
 ## Table of Contents
 
@@ -38,6 +38,7 @@ Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP se
 - [Everyday Commands](#everyday-commands)
 - [How It Works](#how-it-works)
 - [Project & Folder Architecture](#project--folder-architecture)
+- [v1.3.3 10-Language 1,000-Commit Audit & Auto-Fix Benchmark](#v133-10-language-1000-commit-audit--auto-fix-benchmark)
 - [v1.3.2 5-Company Benchmark & v1.3.1 Comparison](#v132-5-company-benchmark--v131-comparison)
 - [Real-World Benchmark (v1.3.1)](#real-world-benchmark-v131)
 - [Before vs. After Rust Integration](#before-vs-after-rust-integration)
@@ -52,7 +53,7 @@ Athena is a **local-first code intelligence tool** (CLI, Terminal UI, and MCP se
 ```bash
 git clone https://github.com/aaryanrwt/athena.git
 cd athena
-pip install -e .
+pip install -e ".[ast]"   # or `pip install -e .` for minimal zero-extra structural fallback
 
 # Open the interactive Terminal Studio
 athena ui
@@ -60,8 +61,12 @@ athena ui
 # Get a <=2KB architectural map of any repo
 athena map .
 
-# Check for breaking changes before committing
+# Check staged changes before committing & preview deterministic fixes
 athena check --staged
+athena fix . --base main --target HEAD --format diff
+
+# Inspect measured local token savings
+athena gain .
 ```
 
 ---
@@ -71,15 +76,17 @@ athena check --staged
 | Command | What it does |
 | :--- | :--- |
 | `athena ui` | Launches the interactive terminal studio (auto-starts when run in a terminal). |
-| `athena doctor .` | Checks live Python, Git, MCP SDK, Rust acceleration, evidence store, and repo state. |
-| `athena mcp --toolsets git,graph --read-only` | Runs Athena's MCP server (`stdio` or loopback `streamable-http`) with toolset/read-only scoping, resources, and workflow prompts. |
+| `athena doctor .` | Checks live Python (`>=3.13`), Git, MCP SDK, Tree-sitter, Rust acceleration, token ledger, evidence store, and repo state. |
+| `athena mcp --toolsets git,graph --read-only` | Runs Athena's 15-tool MCP server (`stdio` or loopback `streamable-http`) with toolset/read-only scoping, 5 resources/templates, and 3 prompts. |
 | `athena map .` | Prints a `<=2000`-character export map of shared modules and symbols. |
-| `athena graph . --query "auth"` | Builds/queries `.athena/graph.json` with trigram search + hub-guarded BFS. |
-| `athena breaking-changes . --base main --target HEAD` | Finds potential breaking API changes, caller impact, and doc drift (`--detail summary` retains `ev_<sha256>` on disk). |
+| `athena graph . --query "auth"` | Builds/queries `.athena/graph.json` with trigram search + hub-guarded BFS across Python, TS/JS, Go, Rust, C/C++, C#, Java, Kotlin, Scala, Swift, Ruby, PHP, CUDA, and TeX. |
+| `athena breaking-changes . --base main --target HEAD` | Finds potential breaking API changes, scoped callers, and doc drift (`--detail summary` retains `ev_<sha256>` on disk). |
+| `athena fix . --base main --target HEAD` | Plans and (`--apply`) safely writes deterministic `safe` remediation patches (`review_required` shims/guides require approval). |
 | `athena view <ev_id> --facet potential_breaking_changes` | Pages through retained `ev_<sha256>` evidence bundles across CLI/MCP sessions. |
+| `athena gain .` | Reports persistent local raw vs. compacted token-savings metrics (`~/.athena/gain.jsonl` or `$ATHENA_GAIN_LOG`). |
 | `athena check --staged` | Pre-commit gate: exits non-zero if staged changes break public APIs. |
-| `athena affected-tests .` | Predicts pytest, Playwright `.spec.ts`, and unit tests impacted by a diff (supports `--offset`/`--limit`). |
-| `athena debt .` | Lists `shortcut: <limit>, <when to upgrade>` debt markers with AST symbols (supports `--offset`/`--limit`). |
+| `athena affected-tests .` | Predicts pytest, Playwright `.spec.ts`, Swift/Scala, and unit tests impacted by a diff (supports `--offset`/`--limit`). |
+| `athena debt .` | Lists `shortcut: <limit>, <when to upgrade>` debt markers (or `--include-todos`) with AST symbols. |
 | `athena install --agent hermes` | Installs Athena skills/hooks for `hermes`, `openclaw`, `claude-code`, `codex`, `cursor`, or `pi`. |
 | `athena init-mcp cursor` | Generates ready-to-paste MCP config JSON (`claude-desktop`, `cursor`, `vscode`). |
 
@@ -90,16 +97,18 @@ athena check --staged
 ```mermaid
 flowchart LR
     User["Developer / AI Agent\n(CLI, Studio UI, MCP)"] --> Gate["Security & Redaction Gate\n(Path Jail, Secret Redaction)"]
-    Gate --> Git["Git & AST Engine\n(14 Languages, 0-LLM Default)"]
-    Gate --> Graph["Code Graph & Repo Map\n(.athena/graph.json, <=2KB Map)"]
+    Gate --> Git["Git & Tree-sitter AST Engine\n(Python ast + 14 Non-Py Grammars, 0-LLM)"]
+    Gate --> Graph["Code Graph & Repo Map\n(.athena/graph.json, <=2KB Map, Gain Ledger)"]
+    Git --> Fix["Deterministic Remediation\n(safe / review_required Unified Diffs)"]
     Git --> Evidence["Evidence Store\n(ev_<sha256> & unk_<sha256>)"]
     Graph --> Evidence
-    Evidence --> Output["Verified Output\n(Paged Views, SARIF, HTML, Release Notes)"]
+    Fix --> Output["Verified Output\n(Atomic Patches, Paged Views, SARIF, HTML)"]
+    Evidence --> Output
 ```
 
 - **Zero-LLM by default:** Everything runs deterministically offline. Local Ollama (`qwen2.5-coder:7b` / `gemma:latest`) is strictly optional (`--llm`).
-- **Never fakes completeness:** Unresolved dynamic calls (`getattr`, `eval`, oversized files) are tracked explicitly as `ResidualUnknown` (`unk_<sha256>`) records instead of being hidden.
-- **Context-friendly & 2026 MCP native:** Heavy tools support `detail="summary"` with cross-process disk-backed `ev_<sha256>` paging (`inspect_analysis_view` / `athena view`), while `athena mcp` exposes 4 read-only Resources/Templates (`athena://server/capabilities`, `athena://repo/map`, `athena://evidence/recent`, `athena://evidence/{evidence_id}`), 3 guided workflow prompts, `--toolsets`/`--read-only` scoping, and loopback-guarded `streamable-http` transport.
+- **Never fakes completeness:** Full-repo stdin `git grep` prefiltering replaces arbitrary monorepo file caps while unresolved dynamic calls (`getattr`, `eval`, oversized files) stay explicitly tracked as `ResidualUnknown` (`unk_<sha256>`) records.
+- **Context-friendly & 2026 MCP native:** Heavy tools support `detail="summary"` with head+tail bounded compaction, never-worse envelopes, cross-process `ev_<sha256>` paging (`inspect_analysis_view` / `athena view`), 15 MCP tools, 5 read-only Resources/Templates (`athena://server/capabilities`, `athena://repo/map`, `athena://gain/summary`, `athena://evidence/recent`, `athena://evidence/{evidence_id}`), 3 guided workflow prompts, `--toolsets`/`--read-only` scoping, and loopback-guarded `streamable-http` transport.
 
 ---
 
@@ -108,18 +117,21 @@ flowchart LR
 ```text
 athena/
 ├── src/athena/
-│   ├── cli.py                # CLI entry point (ui, doctor, mcp, graph, map, view, affected-tests, debt, install, check, report, semver-check)
+│   ├── cli.py                # CLI entry point (ui, doctor, mcp, graph, map, view, fix, gain, affected-tests, debt, install, check, report, semver-check)
 │   ├── tui.py                # Interactive Athena Studio Terminal UI
-│   ├── mcp_server.py         # Scoped stdio / loopback streamable-http MCP server (13 tools, resources, URI templates & prompts)
-│   ├── git_inspector.py      # Safe git diff & batched cat-file extractor (GIT_NO_LAZY_FETCH=1, TOCTOU drift guard)
-│   ├── ast_analyzer.py       # Python ast contract/unit-shift/recursion differ + 14-language structural scanner
-│   ├── graph_store.py        # Persistent .athena/graph.json builder, TS barrel/PHP/CUDA/TeX graph & atomic snapshots
+│   ├── mcp_server.py         # Scoped stdio / loopback streamable-http MCP server (15 tools, 5 resources/templates & 3 prompts)
+│   ├── git_inspector.py      # Safe git diff, non-UTF-8 decoder, stdin git grep prefilter & batched cat-file extractor
+│   ├── ast_analyzer.py       # Python ast contract/PEP 585/unit-shift/recursion differ + multi-language overload & scoped caller engine
+│   ├── treesitter_parser.py  # Optional 14-language Tree-sitter AST extractor, export-macro stripper & visibility analyzer
+│   ├── remediation.py        # Deterministic dry-run & atomic `--apply` patch engine (`safe` vs `review_required`)
+│   ├── token_ledger.py       # Append-only local raw vs. compacted token-savings ledger (`athena gain`)
+│   ├── graph_store.py        # Persistent .athena/graph.json builder (Python, TS/JS, Go, Rust, C/C++, C#, Java, Kotlin, Scala, Swift, Ruby, PHP, CUDA, TeX)
 │   ├── graph_query.py        # Trigram+IDF scorer, hub-guarded BFS, god_nodes & shortest_path
-│   ├── test_selector.py      # Predictive test selection (pytest, Playwright .spec.ts/.e2e.ts, unit tests)
+│   ├── test_selector.py      # Predictive test selection (pytest, Playwright .spec.ts/.e2e.ts, Swift/Scala/Go/Rust/unit tests)
 │   ├── repo_map.py           # <=2KB zero-search architectural export map
-│   ├── debt_tracker.py       # AST-bound `shortcut:` technical debt scanner
-│   ├── evidence_store.py     # Canonical ev_<sha256> & unk_<sha256> store + paged inspection
-│   ├── agent_installer.py    # Transactional installer for Hermes, OpenClaw, Claude Code, Codex, Cursor & Pi
+│   ├── debt_tracker.py       # AST-bound `shortcut:` & TODO/FIXME technical debt scanner
+│   ├── evidence_store.py     # Canonical ev_<sha256> & unk_<sha256> store, head+tail truncation & paged inspection
+│   ├── agent_installer.py    # Transactional NUL/flag-hardened installer for Hermes, OpenClaw, Claude Code, Codex, Cursor & Pi
 │   ├── gates.py              # Staged pre-commit & SemVer bump gates
 │   ├── sarif.py              # SARIF 2.1.0 exporter
 │   ├── html_report.py        # CSP-hardened single-file HTML report renderer
@@ -133,12 +145,49 @@ athena/
 │   └── models.py             # Pydantic v2 schemas
 ├── skills/athena/SKILL.md    # Portable Athena agent protocol skill
 ├── docs/                     # CLI examples, evaluation reports, CI/Docker integrations & demo tape
-├── tests/                    # Automated unit, MCP stdio, release-readiness & evaluation suites
+├── tests/                    # Automated unit, v1.3.3 precision/fix, MCP stdio, release-readiness & evaluation suites
 ├── .github/                  # CI workflows (athena-audit, action-smoke) & PR comment renderer
 ├── action.yml                # Reusable GitHub Action
 ├── Dockerfile                # Rootless container image
-└── pyproject.toml            # Package & Python 3.13-3.15 metadata
+└── pyproject.toml            # Package & Python 3.13-3.15 metadata (`[ast]` Tree-sitter optional extra)
 ```
+
+---
+
+## v1.3.3 10-Language 1,000-Commit Audit & Auto-Fix Benchmark
+
+`v1.3.3` replaces regex-only non-Python diffs and fixed monorepo scan caps with optional **Tree-sitter AST parsing (`[ast]`)**, single-call stdin `git grep` full-repository prefiltering, overload-order invariance, scoped receiver matching, deterministic **auto-fix patch generation (`athena fix`)**, and persistent local token telemetry (`athena gain`).
+
+### 5-Company Regression Verification (`v1.3.2 -> v1.3.3`)
+
+Re-running all `1,050–1,091`-commit spans from `v1.3.2` confirms both dramatic coverage expansion and false-positive elimination (**`16/16` assertions passed**):
+
+| Enterprise Repo | Code Coverage (`v1.3.2 -> v1.3.3`) | Breaking Findings | Callers Matched (`v1.3.2 -> v1.3.3`) | Key `v1.3.3` Precision Fixes Observed |
+| :--- | :---: | :---: | :---: | :--- |
+| `openai/openai-python` (Python) | `37.6% (963/2,560) ->` **`99.9% (2,557/2,560)`** | `132` | `460 -> 3,841` | `CLIModels.get` bogus `_os.environ.get` callers eliminated (`0`); `SyncAPIClient.request` retained repo-wide; `156` fix patches planned |
+| `microsoft/semantic-kernel` (C#/Py) | `22.8% (838/3,682) ->` **`100.0% (3,682/3,682)`** | `23 -> 27` | `124 -> 1,946` | `AggregatorAgent` (`async override` reorder) & `internal static class AgentThreadActions` false alarms suppressed (`0`) |
+| `meta-llama/llama-stack` (Py/TS) | `69.6% (898/1,291) ->` **`100.0% (1,286/1,286)`** | `61` | `113 -> 27` | Cross-scope generic `list`/`main`/`list_models` caller collisions eliminated (`0`) |
+| `ml-explore/mlx` (C++/Py) | `100.0% (635/635)` | `42` | `45 -> 815` | `MLX_API` macro & ctor overload index shifts suppressed (`34,849 -> 815` scoped callers); `0` Python callers on C++ `is_available`; `0` `3rdparty/` `free` callers |
+| `google/go-github` (Go) | `99.4% (516/519)` | `116` | `151 -> 175` | Unexported `DependabotService.getPublicKey` suppressed (`0`); `0` `func` declarations matched; `116` migration guides planned |
+
+### 10-Language / 1,000-Commit Individual Diff & Feature Suite
+
+Audited `100` consecutive first-parent commits individually (`sha^1..sha`, `1,000` diffs total) across `10` newly cloned repositories spanning `10` distinct languages, captured real `git diff` excerpts for every finding, fixed 6 language-specific false positives/gaps uncovered mid-audit, and verified all CLI/MCP commands across every repo:
+
+| Repo (Language) | Commits (`Code / Brk`) | Findings (`Before -> After Fixes`) | Avg Parse Cov | Crashes | `CodeGraph` (`Nodes / Edges`, Rust Parity) | Impacted Tests | Tokens Saved (`athena gain`) | Real Commits Caught |
+| :--- | :---: | :---: | :---: | :---: | :--- | :---: | ---: | :--- |
+| `microsoft/playwright` (TypeScript) | `73 / 17` | `71` (`14` pub, `57` int) | `99.72%` | `0` | `13,299 / 19,927` (`True`) | `747 / 754` | `5,453,848` (`99.95%`) | `tObject` validator change (`41963499`, `903` callers), `serializeCompilationCache` (`0288334f`) |
+| `tokio-rs/tokio` (Rust) | `88 / 2` | `4` (`4` pub) | `100.0%` | `0` | `10,195 / 9,379` (`True`) | `314 / 314` | `2,698,982` (`99.91%`) | Removed `from_bytes` (`a99332ab`, `11` callers), `AsyncFdTryNewError` (`9dd749d3`) |
+| `google/guava` (Java) | `77 / 1` | `17 ->` **`10`** | `100.0%` | `0` | `10,523 / 7,256` (`True`) | `1,394 / 1,394` | `8,746,769` (`99.98%`) | Caliper benchmark deletions (`fc59cc25`); `@Nullable` & inner `@Override` FPs eliminated |
+| `kubernetes/client-go` (Go) | `68 / 5` | `36` (`36` pub) | `100.0%` | `0` | `23,030 / 24,714` (`True`) | `170 / 170` | `4,449,148` (`99.94%`) | KEP-5517 `NodeAllocatableMappedResources` (`6443cb62`) & DRA `ApplyConfiguration` removals |
+| `pydantic/pydantic` (Python) | `45 / 2` | `7 ->` **`4`** | `99.99%` | `0` | `18,948 / 72,996` (`True`) | `2,982 / 3,092` | `3,461,283` (`99.93%`) | `@deprecated arguments_schema` (`62c615a3`), removed `validate_on_init`/`__validators__` (`2b2baae1`); PEP 585 `Dict->dict` FP eliminated |
+| `abseil/abseil-cpp` (C++) | `93 / 5` | `255 ->` **`186`** | `100.0%` | `0` | `3,477 / 2,628` (`True`) | `14 / 14` | `4,377,689` (`99.95%`) | `/internal/` & `namespace ...internal` noise suppressed; `raw_linked_hash_set` (`aca5bfea`) tracked |
+| `dotnet/extensions` (C#) | `55 / 3` | `19` (`10` pub, `9` int TS) | `100.0%` | `0` | `6,860 / 4,483` (`True`) | `1,070 / 1,072` | `3,939,004` (`99.93%`) | `AddHttpLatencyTelemetry` rename (`81ba00bd`), OpenAI Assistants API removal (`d0caf643`) |
+| `square/okhttp` (Kotlin) | `30 / 0` | `0` | `100.0%` | `0` | `5,650 / 5,003` (`True`) | `248 / 248` | `1,667,961` (`99.84%`) | Clean zero-false-positive pass across `30` code-modifying commits |
+| `apple/swift-nio` (Swift) | `69 / 5` | `30 ->` **`16`** | `99.99%` | `0` | `10,904 / 10,448` (`True`) | `229 / 229` | `1,446,512` (`99.84%`) | `NIOHTTPServerPipelineConfiguration` revert (`2f58d8ef`), `Sendable -> sending` (`fcc5b9c1`); `@available` & `@inlinable` FPs eliminated |
+| `laravel/framework` (PHP) | `79 / 1` | `4 ->` **`1`** | `99.99%` | `0` | `41,181 / 37,978` (`True`) | `1,346 / 1,363` | `5,396,562` (`99.97%`) | Deleted `PhpRedisConnection::isRetryable` (`3c8d07f4`); optional `$options = []` & `__construct` FPs eliminated |
+
+- **Precision & Coverage Gains from Real Diff Auditing:** Fixing the 6 bugs caught during the 10-language audit cut noisy breaking alerts from **`59 -> 41` commits (`443 -> 347` findings)** with **`0` crashes**, expanded `apple/swift-nio` graph indexing from **`88 -> 10,904` nodes (`5 -> 229` affected tests)** with bit-exact Rust parity, compressed **`44,250,647` raw tokens into `23,667` emitted tokens (`99.95%` saved across `31` logged runs)**, applied a live deterministic `none_guard` patch on an isolated temp clone via `athena fix --apply`, and passed **`195 passed, 1 deselected`** across all 3 test modes (Tree-sitter+Rust ON, `ATHENA_TREESITTER_DISABLE=1`, and `FAST_ANYTHING_DISABLE=1`). Full breakdowns and diffs: [docs/evaluation.md](docs/evaluation.md).
 
 ---
 
@@ -213,7 +262,7 @@ python scripts/build_rust_accel.py
 FAST_ANYTHING_DISABLE=1 athena graph . --query "auth"
 ```
 
-Full version-by-version test history (`v1.0.0` -> `v1.3.2`) and Rust parity audit: [docs/evaluation.md](docs/evaluation.md).
+Full version-by-version test history (`v1.0.0` -> `v1.3.3`) and Rust parity audit: [docs/evaluation.md](docs/evaluation.md).
 
 ---
 
@@ -223,7 +272,7 @@ Full version-by-version test history (`v1.0.0` -> `v1.3.2`) and Rust parity audi
 - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
   with:
     fetch-depth: 0
-- uses: aaryanrwt/athena@v1.3.2
+- uses: aaryanrwt/athena@v1.3.3
 ```
 
 Posts one sticky breaking-change & blast-radius summary per PR. See [docs/integrations.md](docs/integrations.md) for Docker, pre-commit, and permissions setup.

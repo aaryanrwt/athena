@@ -135,6 +135,33 @@ class AnalysisResourceConstraintError(RuntimeError):
         }
 
 
+def truncate_head_tail(
+    text: str,
+    max_chars: int = 2000,
+    head_ratio: float = 0.65,
+) -> tuple[str, bool, int]:
+    """Bound long text while preserving both leading context and trailing error/summary lines."""
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text, False, 0
+    safe_ratio = max(0.2, min(0.85, float(head_ratio)))
+    marker_budget = 48
+    usable = max(32, max_chars - marker_budget)
+    head_len = max(16, int(usable * safe_ratio))
+    tail_len = max(16, usable - head_len)
+    omitted = len(text) - (head_len + tail_len)
+    if omitted <= 0:
+        return text, False, 0
+    marker = f"\n... [omitted {omitted} chars] ...\n"
+    return text[:head_len] + marker + text[-tail_len:], True, omitted
+
+
+def never_worse_payload(raw_text: str, compact_text: str) -> tuple[str, bool]:
+    """Return raw_text uncompacted when compaction adds overhead on small payloads."""
+    if len(compact_text) >= len(raw_text) and len(raw_text) <= 4096:
+        return raw_text, False
+    return compact_text, True
+
+
 def resolve_completeness(
     *,
     skipped_files: int = 0,
@@ -378,7 +405,17 @@ class EvidenceStore:
         summary.setdefault("parent_evidence_id", ev_id)
         summary.setdefault("completeness", completeness)
         summary.setdefault("available_facets", facets)
-        return redact_sensitive_data(summary)
+        redacted_summary = redact_sensitive_data(summary)
+        try:
+            from athena.token_ledger import record_token_saving
+
+            raw_sz = len(json.dumps(safe_payload, ensure_ascii=False, separators=(",", ":")))
+            emit_sz = len(json.dumps(redacted_summary, ensure_ascii=False, separators=(",", ":")))
+            proj = safe_payload.get("repo_path") or safe_payload.get("repo_root") or "."
+            record_token_saving(f"summary:{kind}", str(proj), raw_sz, emit_sz)
+        except Exception:
+            pass
+        return redacted_summary
 
     def has(self, evidence_id: str) -> bool:
         """Return True if an evidence bundle is retained in memory or on disk."""

@@ -124,7 +124,7 @@ def query_code_graph(
         if e.source in included_ids and e.target in included_ids
     ][:100]
 
-    return {
+    result_payload = {
         "status": "ok",
         "query": query,
         "graph_evidence_id": graph.graph_evidence_id,
@@ -134,6 +134,23 @@ def query_code_graph(
         "subgraph_edges": out_edges,
         "estimated_tokens": max(1, used_chars // _CHARS_PER_TOKEN) if out_nodes else 0,
     }
+    try:
+        from pathlib import Path
+        from athena.token_ledger import record_token_saving
+
+        root_p = Path(graph.repo_root)
+        unique_files = {n.file_path for n in graph.nodes if not n.is_test_or_utility}
+        raw_bytes = 0
+        for rel in list(unique_files)[:500]:
+            try:
+                raw_bytes += (root_p / rel).stat().st_size
+            except OSError:
+                pass
+        if raw_bytes > 0:
+            record_token_saving("graph_query", graph.repo_root, raw_bytes, max(1, used_chars))
+    except Exception:
+        pass
+    return result_payload
 
 
 def get_god_nodes(

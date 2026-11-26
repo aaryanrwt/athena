@@ -369,19 +369,45 @@ FAST_ANYTHING_DISABLE=1 athena graph . --query "auth"
 
 Builds `.fast/ports/*` PyO3 extensions into `.fast/lib/` (transparently falls back to pure Python when unbuilt or when `FAST_ANYTHING_DISABLE=1` is set).
 
-### 18. Cross-Process Evidence Paging, Scoped MCP Server & Diagnostics (`v1.3.2+`)
+### 18. Cross-Process Evidence Paging, Scoped MCP Server & Diagnostics (`v1.3.2+`, updated `v1.3.3`)
 
 ```bash
-# Verify live Python, Git, MCP SDK, Rust kernel, evidence store, and repo state
+# Optional: enable Tree-sitter AST parsing across 14 non-Python languages
+pip install -e ".[ast]"
+
+# Verify live Python (>=3.13), Git, MCP SDK, Tree-sitter, Rust kernel, token ledger, and repo state
 athena doctor .
 
 # Retain summary evidence on disk and page facets from another terminal session
 athena breaking-changes . --base main --target HEAD --detail summary
 athena view <ev_id> --facet potential_breaking_changes --offset 0 --limit 25
 
-# Run a read-only scoped MCP server over stdio or loopback streamable-http
+# Run a read-only scoped MCP server over stdio or loopback streamable-http (15 tools total)
 athena mcp --toolsets git,graph,analysis,testing,evidence --read-only
 athena mcp --transport streamable-http --host 127.0.0.1 --port 8765 --read-only
 ```
 
-Persists `ev_<sha256>` evidence bundles atomically under `~/.athena/evidence` (or `$ATHENA_EVIDENCE_DIR`) and exposes MCP Resources (`athena://server/capabilities`, `athena://repo/map`, `athena://evidence/recent`, `athena://evidence/{evidence_id}`) and Guided Prompts (`pre_merge_audit`, `release_readiness_review`, `codebase_onboarding`).
+Persists `ev_<sha256>` evidence bundles atomically under `~/.athena/evidence` (or `$ATHENA_EVIDENCE_DIR`) and exposes 5 MCP Resources/Templates (`athena://server/capabilities`, `athena://repo/map`, `athena://gain/summary`, `athena://evidence/recent`, `athena://evidence/{evidence_id}`) and Guided Prompts (`pre_merge_audit`, `release_readiness_review`, `codebase_onboarding`).
+
+### 19. Deterministic Auto-Fix Plan & Patch Application (`v1.3.3+`)
+
+```bash
+# Preview unified diffs (default dry-run) classified into safe vs review_required
+athena fix . --base main --target HEAD --format diff
+
+# Apply non-overlapping safe patches atomically (blocks stale-line or conflicting edits)
+athena fix . --base main --target HEAD --apply
+```
+
+Generates deterministic `safe` patches (`recursion_fix`, literal `none_guard`, 1-to-1 Python keyword `caller_update`, `docstring_sync`) and `review_required` remediation (`compat_shim`, `migration_guide`).
+
+### 20. Persistent Local Token-Savings Telemetry (`v1.3.3+`)
+
+```bash
+# Inspect raw vs compacted token savings for the current repository or across all repos
+athena gain . --limit 20
+athena gain --all --limit 50
+
+# Reset the local ledger cleanly (~/.athena/gain.jsonl or $ATHENA_GAIN_LOG)
+athena gain --reset
+```

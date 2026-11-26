@@ -101,12 +101,12 @@ def test_mcp_server_tool_registration_and_unguarded_none_default(mcp_test_repo: 
             "generate_verified_release_brief",
         }.issubset(tool_names)
 
-        # Analysis tools are read-only. Release tools can create/replace an explicit output_file,
+        # Analysis tools are read-only. Release and fix tools can create/replace files on disk,
         # so their MCP hints must disclose mutation and potential overwrite behavior.
         for t in tools:
             assert t.annotations is not None, f"Tool {t.name} missing annotations"
             dumped_ann = t.annotations.model_dump(by_alias=True)
-            if t.name in {"generate_release_notes", "generate_verified_release_brief"}:
+            if t.name in {"generate_release_notes", "generate_verified_release_brief", "generate_fix_plan"}:
                 assert dumped_ann["readOnlyHint"] is False
                 assert dumped_ann["destructiveHint"] is True
                 assert dumped_ann["idempotentHint"] is False
@@ -122,6 +122,8 @@ def test_mcp_server_tool_registration_and_unguarded_none_default(mcp_test_repo: 
                 "inspect_analysis_view",
                 "discover_tools",
                 "predict_affected_tests",
+                "generate_fix_plan",
+                "get_token_savings_report",
             }:
                 assert dumped_ann["openWorldHint"] is False
             else:

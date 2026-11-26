@@ -2,6 +2,25 @@
 
 All notable changes to Athena are recorded here. The project follows semantic versioning.
 
+## 1.3.3
+
+### Added & Fixed
+
+- **Tree-sitter Multi-Language AST Parsing, Precision Rules & Monorepo Coverage (`src/athena/treesitter_parser.py`, `src/athena/ast_analyzer.py`, `src/athena/git_inspector.py`, `pyproject.toml`)**:
+  - Added optional `tree-sitter>=0.25.0` + `tree-sitter-language-pack>=1.0.0` backend (`pip install -e ".[ast]"`) covering 14 non-Python languages (TypeScript/TSX, JavaScript, Go, Rust, C, C++ [including `.h` headers], C#, Java, Kotlin, Scala, Ruby, PHP, Swift) with automatic hardened structural fallback (`ATHENA_TREESITTER_DISABLE=1`).
+  - Eliminated key false-positive classes caught on enterprise codebases: order-insensitive modifier canonicalization (`async override` vs `override async`), C/C++ export macro preprocessing (`MLX_API`, `ABSL_DLL`, `GRPCAPI`, `__declspec`, `__attribute__`), enclosing-class visibility inheritance (`internal static class` / nested classes), order-independent overload pairing (`_pair_multilang_overloads`) + `#N` overload arity gating, trailing optional parameter compatibility across PHP/TS/C++/Swift/Kotlin, PEP 585 Python annotation equivalence (`Dict`/`List`/`Set`/`Tuple` == `dict`/`list`/`set`/`tuple`), Java `@Nullable` normalization & anonymous inner class skipping, C++ `/internal/`/`/detail/` directory + `namespace ...internal...` scoping & single-line template names, Swift post-name parameter slicing past `@available(*, deprecated)` / `@_disfavoredOverload` / `@inlinable`, generic magic/builtin method guards (`__construct`, `equals`, `hashCode`, `toString`, `get`, `copy`, `main`, `free`, `list`), bare-vs-attribute receiver qualification, and segment-exact Python import matching.
+  - Replaced 500-file truncation with single-call stdin `git grep -I -l -F -f -` prefiltering (`git_grep_matching_files`), lifting parse coverage on `openai/openai-python` (`37.6% -> 99.9%`, `2,557/2,560`), `microsoft/semantic-kernel` (`22.8% -> 100.0%`, `3,682/3,682`), and `meta-llama/llama-stack` (`69.6% -> 100.0%`, `1,286/1,286`), while handling non-UTF-8 encodings (`decode_bytes_safely`) and skipping CRLF-only diffs cleanly.
+- **Swift & Scala Code Graph + Test Selection (`src/athena/graph_store.py`)**:
+  - Added `.swift` and `.scala` extraction and test suffixes to `CodeGraph` and `predict_affected_tests` while keeping compiled Rust PyO3 parity identical (`apple/swift-nio` grew from `88 -> 10,904` nodes and `5 -> 229` impacted tests with exact SHA-256 Rust-vs-Python parity).
+- **Deterministic Auto-Fix Engine (`athena fix`, `generate_fix_plan`, `src/athena/remediation.py`)**:
+  - Generates deterministic remediation plans with unified diffs tagged `safe` (`recursion_fix`, literal `none_guard`, 1-to-1 Python keyword `caller_update`, `docstring_sync`) vs `review_required` (`compat_shim`, `migration_guide`), supporting dry-run default, `--format diff`, and atomic conflict/stale-line guarded `--apply`.
+- **Persistent Token-Savings Ledger & Context Protection (`athena gain`, `get_token_savings_report`, `athena://gain/summary`, `src/athena/token_ledger.py`, `src/athena/evidence_store.py`, `src/athena/agent_installer.py`)**:
+  - Added append-only local ledger (`~/.athena/gain.jsonl` / `$ATHENA_GAIN_LOG`) with literal path filtering (`Path.resolve()`), `truncate_head_tail()` / `never_worse_payload()` guards, NUL-byte/flag-hardened agent hooks, `15` registered MCP tools (`mcp_server.py`), and `>=3.13` validation + Tree-sitter/ledger checks in `athena doctor`.
+- **Verified Benchmark & Test Results**:
+  - Re-ran the **5-Company `1,050+`-Commit Enterprise Check**: all `16/16` precision & coverage assertions passed with `99.4%–100.0%` file coverage.
+  - Executed a fresh **10-Language / 1,000-Commit Individual Diff Audit & Full-Feature Suite** (`playwright`, `tokio`, `guava`, `client-go`, `pydantic`, `abseil-cpp`, `dotnet/extensions`, `okhttp`, `swift-nio`, `laravel`, `100` consecutive first-parent commits each): **`0` crashes**, `99.72%–100.0%` avg parse coverage, breaking commits tightened **`59 -> 41`** (`443 -> 347` findings), `10/10` Rust-vs-Python graph SHA-256 parity, live `fix --apply`, `15/15` MCP checks, and **`44,226,980 / 44,250,647` tokens saved (`99.95%` reduction)**.
+  - Passed full 3-mode offline pytest suite: **`195 passed, 1 deselected`** in Tree-sitter+Rust ON (`221.75s`), `ATHENA_TREESITTER_DISABLE=1` (`254.76s`), and `FAST_ANYTHING_DISABLE=1` (`362.33s`).
+
 ## 1.3.2
 
 ### Added & Fixed

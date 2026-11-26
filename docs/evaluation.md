@@ -8,6 +8,45 @@
 | **`v1.3.0`** | Persistent code graph, 2KB repo map, `shortcut:` debt, `ev_<sha256>`/`unk_<sha256>` & cross-agent installer | `10` fresh `10k+`-star repos (`100` commits each, `8,804` files) + `1,000`-commit stress tests (`FastAPI`, `Ollama`, `Tauri`, `Svelte`) | `100%` pass (`0` errors); `49x–2,067x` token reduction |
 | **`v1.3.1`** | Hybrid Rust PyO3 acceleration (`fast-anything`) + batched Git `cat-file --batch`, `athena affected-tests`, TOCTOU drift check, unit-shift heuristic, TS barrels, PHP/Laravel magic & CUDA/TeX support | `13` multi-language & NVIDIA repos (`HEAD~100..HEAD~1000`) + **3-Company Before/After Rust Parity Audit** (`NVIDIA/cuvs`, `google/flatbuffers`, `microsoft/playwright-python`, `1,000–1,472` commits each) | `13/13` (`0` errors, up to `3,025.0x` tokens) + **14/14 parity identical** across all 3 enterprise repos (`22.48x–26.73x` faster C++/CUDA graph builds; `0` Rust regressions) |
 | **`v1.3.2`** | MCP Resources/URI Templates/Workflow Prompts, toolset & `--read-only` scoping, loopback-guarded `streamable-http`, disk-backed `EvidenceStore`, bounded pagination, large-diff regex/redaction optimizations, input/exit-code fixes & `athena doctor` | Offline pytest suite (hybrid Rust & `FAST_ANYTHING_DISABLE=1` fallback) + 26-check CLI/MCP stdio/`streamable_http_app` audit + **5-Company `1,050+`-Commit `v1.3.1 -> v1.3.2` Benchmark** (`google/go-github`, `ml-explore/mlx`, `openai/openai-python`, `meta-llama/llama-stack`, `microsoft/semantic-kernel`, `5,291` commits, `63.8M` raw tokens) | `174 passed, 1 deselected` offline suite (`0` failures), `15 passed` pure-Python parity/protocol subset, `26/26` live CLI & MCP checks + **5/5 enterprise pass** (`6.02x–17.92x` faster breaking-change runs, `llama-stack` timeout eliminated, `5,103x–81,438.6x` token reduction, `5/5` parity) |
+| **`v1.3.3`** | Optional Tree-sitter multi-language AST (`[ast]`), C++ export-macro & internal-namespace guards, overload pairing & arity filtering, PEP 585 / Java `@Nullable` / PHP optional param / Swift `@available` precision fixes, stdin `git grep` full-repo prefiltering, Swift/Scala `CodeGraph`, deterministic `athena fix` engine & `athena gain` ledger (`15` MCP tools) | 3-mode offline pytest matrix + **5-Company `v1.3.2 -> v1.3.3` Regression Check** + **Fresh 10-Language / 1,000-Commit Commit-by-Commit Diff Audit** (`microsoft/playwright`, `tokio-rs/tokio`, `google/guava`, `kubernetes/client-go`, `pydantic/pydantic`, `abseil/abseil-cpp`, `dotnet/extensions`, `square/okhttp`, `apple/swift-nio`, `laravel/framework`) + 10-repo full CLI/MCP feature suite | `195 passed, 1 deselected` in all 3 modes (`0` failures); `16/16` 5-company precision/coverage assertions passed (`99.4%–100.0%` coverage); **`0` crashes** across `1,000` real commits (`99.72%–100.0%` avg cov); alerts tightened `59 -> 41` (`443 -> 347` findings); `10/10` Rust parity & CLI/MCP checks; `44,226,980` tokens saved (`99.95%`) |
+
+---
+
+## v1.3.3 10-Language 1,000-Commit Audit, Precision Fixes & 5-Company Regression Verification
+
+### 1. `v1.3.2 -> v1.3.3` 5-Company Regression & Monorepo Coverage Check
+
+Re-evaluated offline on the 5 enterprise repositories (`HEAD~1050..HEAD`) with Tree-sitter + `git grep -I -l -F -f -` prefiltering (`v133_vs_v132_enterprise_check.json`):
+
+| Company & Repo | Breaking Changes (`v1.3.2 -> v1.3.3`) | Code Coverage (`v1.3.2 -> v1.3.3`) | Scoped Callers (`v1.3.2 -> v1.3.3`) | Scan Time (`v1.3.3`) | Verified Precision Improvements (`16/16` Assertions Passed) |
+| :--- | :---: | :---: | ---: | ---: | :--- |
+| `google/go-github` | `111 -> 116` | `99.4% (516/519) -> 99.4% (516/519)` | `151 -> 175` | `22.00s` | Unexported `DependabotService.getPublicKey` suppressed (`0`), `0` func decl callers, `Codespaces` excluded, `fix` dry-run `116` patches (`review_required`) |
+| `ml-explore/mlx` | `39 -> 42` | `100.0% (636/636) -> 100.0% (635/635)` | `45 -> 815` | `15.52s` | `MLX_API` & ctor overload shifts eliminated (`101 -> 42` breaks, `34,849 -> 815` callers), `0` Py callers for C++ `is_available`, `0` `3rdparty/` `free` callers, `0` decl callers |
+| `openai/openai-python` | `132 -> 132` | **`37.6% (963/2,560) -> 99.9% (2,557/2,560)`** | `460 -> 3,841` | `30.21s` | Full-repo prefilter unlocked remaining `1,594` files; `SyncAPIClient.request` preserved (`2`), `CLIModels.get` bogus `_os.environ.get` callers eliminated (`0`), `fix` dry-run `156` patches |
+| `meta-llama/llama-stack` | `61 -> 61` | **`69.6% (898/1,291) -> 100.0% (1,286/1,286)`** | `113 -> 27` | `41.94s` | Generic `list`/`main`/`list_models` cross-scope false caller collisions eliminated (`0`) |
+| `microsoft/semantic-kernel` | `23 -> 27` | **`22.8% (838/3,682) -> 100.0% (3,682/3,682)`** | `124 -> 1,946` | `22.30s` | `AggregatorAgent` modifier-reorder (`async override`) FP suppressed (`0`), `internal static class AgentThreadActions` suppressed, overload `#N` shifts fixed |
+
+### 2. Fresh 10-Language / 1,000-Commit Commit-by-Commit Audit
+
+Each repository's latest `100` consecutive first-parent commits (`1,000` individual `sha^1..sha` commits total; `677` non-test code commits) were analyzed independently with caller blast-radius scanning, dry-run `fix` planning, and `git diff` capture, then re-run after fixing 6 real-world false-positive & coverage gaps uncovered during diff inspection:
+
+| Repository & Language | Commit Span (`100` Commits) | Code Commits | Breaking Commits (`Before -> After`) | Findings (`Before -> After`) | Scoped Callers (`Before -> After`) | Avg Cov % | Crashes | Graph (`Nodes / Edges`, Rust Parity) | Affected Tests | Tokens Saved (`athena gain`) |
+| :--- | :--- | :---: | :---: | :---: | ---: | :---: | :---: | :--- | :---: | ---: |
+| `microsoft/playwright` (TS) | `b5b158ae..579cf348` | `73` | `17` | `71` | `1,573` | `99.72%` | `0` | `13,299 / 19,927` (`True`, `6.18s`/`5.73s`) | `747 / 754` | `5,453,848` (`99.95%`) |
+| `tokio-rs/tokio` (Rust) | `7147b620..854013a8` | `88` | `2` | `4` | `15` | `100.0%` | `0` | `10,195 / 9,379` (`True`, `2.96s`/`2.54s`) | `314 / 314` | `2,698,982` (`99.91%`) |
+| `google/guava` (Java) | `3dab0e87..c9977bc9` | `77` | `3 -> 1` | `17 -> 10` | `664 -> 0` | `100.0%` | `0` | `10,523 / 7,256` (`True`, `7.80s`/`7.33s`) | `1,394 / 1,394` | `8,746,769` (`99.98%`) |
+| `kubernetes/client-go` (Go) | `c135e6d0..96596e7a` | `68` | `5` | `36` | `906` | `100.0%` | `0` | `23,030 / 24,714` (`True`, `8.00s`/`7.49s`) | `170 / 170` | `4,449,148` (`99.94%`) |
+| `pydantic/pydantic` (Python) | `824cf7bf..6449f80d` | `45` | `3 -> 2` | `7 -> 4` | `1,073 -> 314` | `99.99%` | `0` | `18,948 / 72,996` (`True`, `16.33s`/`16.11s`) | `2,982 / 3,092` | `3,461,283` (`99.93%`) |
+| `abseil/abseil-cpp` (C++) | `6474a01e..e26d49b1` | `93` | `16 -> 5` | `255 -> 186` | `24,547 -> 23,055` | `100.0%` | `0` | `3,477 / 2,628` (`True`, `2.37s`/`2.13s`) | `14 / 14` | `4,377,689` (`99.95%`) |
+| `dotnet/extensions` (C#) | `b4b46cc2..c209c80c` | `55` | `3` | `19` | `4` | `100.0%` | `0` | `6,860 / 4,483` (`True`, `7.01s`/`5.21s`) | `1,070 / 1,072` | `3,939,004` (`99.93%`) |
+| `square/okhttp` (Kotlin) | `d66092bb..223a0cc7` | `30` | `0` | `0` | `0` | `100.0%` | `0` | `5,650 / 5,003` (`True`, `2.62s`/`1.94s`) | `248 / 248` | `1,667,961` (`99.84%`) |
+| `apple/swift-nio` (Swift) | `32f395bc..57b45c9f` | `69` | `8 -> 5` | `30 -> 16` | `835 -> 700` | `99.99%` | `0` | `10,904 / 10,448` (`True`, `17.70s`/`3.02s`) | `229 / 229` | `1,446,512` (`99.84%`) |
+| `laravel/framework` (PHP) | `aa9deaa7..321caf77` | `79` | `2 -> 1` | `4 -> 1` | `148 -> 0` | `99.99%` | `0` | `41,181 / 37,978` (`True`, `10.96s`/`10.21s`) | `1,346 / 1,363` | `5,396,562` (`99.97%`) |
+
+### 3. 10-Repo Feature & 3-Mode Pytest Verification
+
+- **Independent CLI/MCP Feature Matrix (`10repo_feature_torture_report.json`):** `10/10` pass across `athena map` (`974–2,000` chars), `CodeGraph` Rust-vs-Python SHA-256 parity (`10/10`), `athena inspect`, `breaking-changes --detail summary` (`637–641 B`) + cross-process `athena view`, `affected-tests`, `check --staged`, `semver-check`, `debt` (`--limit 10` & `--include-todos`), `report --html`, `release-notes --markdown-only`, `fix --dry-run`, `doctor` (`treesitter.available=True`), live `fix --apply` (verified `1` `none_guard` patch on isolated temp clone), `15/15` MCP tools + `athena://gain/summary`, and **`44,226,980` of `44,250,647` raw tokens saved (`99.95%` global reduction across `31` commands)**.
+- **3-Mode Offline Pytest Matrix (`-m "not ollama"`):** Tree-sitter + Rust ON (`195 passed, 1 deselected in 221.75s`), `ATHENA_TREESITTER_DISABLE=1` fallback (`195 passed, 1 deselected in 254.76s`), and `FAST_ANYTHING_DISABLE=1` pure Python (`195 passed, 1 deselected in 362.33s`).
 
 ---
 

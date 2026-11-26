@@ -1,5 +1,5 @@
 """Athena: Local-First, Evidence-Backed Multi-Language Git & AST Change Intelligence MCP Server."""
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 __author__ = "Aaryan Rawat"
 __email__ = "aaryan28rwt@gmail.com"

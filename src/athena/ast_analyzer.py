@@ -10,7 +10,10 @@ from pathlib import Path
 
 from athena.git_inspector import (
     RawRangeExtraction,
+    _is_lockfile_or_generated,
     _is_test_file,
+    decode_bytes_safely,
+    git_grep_matching_files,
     read_blob_at_revision,
     read_blobs_at_revision,
     run_git_command,
@@ -28,6 +31,22 @@ from athena.models import (
 )
 from athena.security import is_safe_repo_file
 from athena.symbol_cache import compute_cache_key, get_active_cache
+from athena.treesitter_parser import (
+    ParsedCallSite,
+    ParsedMultiLangSymbol,
+    _parse_params_from_raw,
+    _preprocess_cpp_export_macros,
+    _store_symbol,
+    compute_multilang_visibility,
+    extract_multilang_calls_treesitter,
+    get_language_family,
+    get_treesitter_status,
+    is_treesitter_available,
+    normalize_modifiers_and_return,
+    normalize_type_expr,
+    parse_multilang_symbols_treesitter,
+    resolve_visibility_from_modifiers,
+)
 
 _ENUM_BASE_NAMES = {"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "ReprEnum"}
 
@@ -300,11 +319,26 @@ def _determine_py_export_exposure(
         return True, f"Defined in package entrypoint `{norm_path}`"
 
     is_private_path = any(
-        (seg.startswith("_") and seg != "__init__.py") or seg in ("internal", "_internal", "tests", "test")
+        (seg.startswith("_") and seg != "__init__.py")
+        or seg
+        in (
+            "internal",
+            "_internal",
+            "tests",
+            "test",
+            "templates",
+            "template",
+            "scripts",
+            "examples",
+            "samples",
+            "benchmarks",
+            ".github",
+            "demo",
+        )
         for seg in parts
     )
     if is_private_path:
-        return False, f"Internal/private module path `{norm_path}`"
+        return False, f"Internal/private or auxiliary module path `{norm_path}`"
 
     return True, f"Public top-level symbol in module `{norm_path}`"
 
@@ -757,6 +791,48 @@ def _parse_python_symbols_uncached(
     return symbols
 
 
+_PY_PEP585_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\b(?:typing\.)?Dict\b"), "dict"),
+    (re.compile(r"\b(?:typing\.)?List\b"), "list"),
+    (re.compile(r"\b(?:typing\.)?Set\b"), "set"),
+    (re.compile(r"\b(?:typing\.)?FrozenSet\b"), "frozenset"),
+    (re.compile(r"\b(?:typing\.)?Tuple\b"), "tuple"),
+    (re.compile(r"\b(?:typing\.)?Type\b"), "type"),
+    (
+        re.compile(
+            r"\btyping\.(Optional|Union|Any|Callable|Iterable|Iterator|Mapping|Sequence|MutableMapping|MutableSequence)\b"
+        ),
+        r"\1",
+    ),
+)
+
+
+def _canonicalize_py_annotation(ann: str | None) -> str | None:
+    """Normalize PEP 585 / typing-module equivalents (Dict -> dict, etc.) in Python annotations."""
+    if ann is None:
+        return None
+    s = " ".join(ann.split()).strip()
+    if not s:
+        return s
+    for pat, repl in _PY_PEP585_REPLACEMENTS:
+        s = pat.sub(repl, s)
+    return s
+
+
+def _strip_optional_type(ann: str | None) -> str | None:
+    """Normalize outer `Optional[T]`, `T | None`, or `None | T` into inner `T` when present."""
+    if not ann:
+        return None
+    s = _canonicalize_py_annotation(ann) or ""
+    if s.startswith("Optional[") and s.endswith("]"):
+        return s[len("Optional[") : -1].strip()
+    if "|" in s:
+        parts = [p.strip() for p in s.split("|") if p.strip() != "None"]
+        if len(parts) == 1:
+            return parts[0]
+    return s
+
+
 def _compare_python_symbol(
     file_path: str,
     old_sym: _PySymbolInfo,
@@ -845,15 +921,25 @@ def _compare_python_symbol(
     has_new_varargs = any(p.kind == "VAR_POSITIONAL" for p in new_sym.params)
     has_new_kwargs = any(p.kind == "VAR_KEYWORD" for p in new_sym.params)
 
-    removed_params = [name for name in old_by_name if name not in new_by_name]
+    removed_params = [old_by_name[name] for name in old_by_name if name not in new_by_name]
     if removed_params:
-        if has_new_varargs and has_new_kwargs:
+        unabsorbed: list[str] = []
+        for rp in removed_params:
+            absorbed = (
+                (rp.kind == "POSITIONAL_ONLY" and has_new_varargs)
+                or (rp.kind == "KEYWORD_ONLY" and has_new_kwargs)
+                or (rp.kind == "POSITIONAL_OR_KEYWORD" and has_new_varargs and has_new_kwargs)
+            )
+            if not absorbed:
+                unabsorbed.append(rp.name)
+        removed_names = [rp.name for rp in removed_params]
+        if not unabsorbed:
             findings.append(
                 (
                     "signature_changed",
                     False,
                     "low",
-                    f"Parameters {removed_params} removed from '{old_sym.qualified_name}', but absorbed by *args/**kwargs.",
+                    f"Parameters {removed_names} removed from '{old_sym.qualified_name}', but absorbed by variadic parameters.",
                 )
             )
         else:
@@ -862,7 +948,7 @@ def _compare_python_symbol(
                     "signature_changed",
                     True,
                     "high",
-                    f"Removed parameter(s) {removed_params} from '{old_sym.qualified_name}' without *args/**kwargs absorption.",
+                    f"Removed parameter(s) {unabsorbed} from '{old_sym.qualified_name}' without variadic absorption.",
                 )
             )
 
@@ -952,12 +1038,19 @@ def _compare_python_symbol(
                     )
                 )
         if old_p.kind != new_p.kind:
+            # Relaxing trailing KEYWORD_ONLY -> POSITIONAL_OR_KEYWORD preserves all existing kw callers;
+            # mutating '/' (POSITIONAL_ONLY boundary) stays flagged per API contract.
+            is_widening = (
+                old_p.kind == "KEYWORD_ONLY"
+                and new_p.kind == "POSITIONAL_OR_KEYWORD"
+            )
             findings.append(
                 (
                     "signature_changed",
-                    True,
-                    "medium",
-                    f"Parameter '{name}' kind in '{old_sym.qualified_name}' changed from {old_p.kind} to {new_p.kind}.",
+                    not is_widening,
+                    "low" if is_widening else "medium",
+                    f"Parameter '{name}' kind in '{old_sym.qualified_name}' changed from {old_p.kind} to {new_p.kind}"
+                    + (" (backward-compatible widening)." if is_widening else "."),
                 )
             )
 
@@ -971,25 +1064,38 @@ def _compare_python_symbol(
             )
         )
 
-    # Check return type annotation change (diff.py:L699 gap)
-    if old_sym.return_annotation != new_sym.return_annotation and old_sym.return_annotation is not None:
+    # Check return type annotation change (Optional[T] -> T is backward-compatible narrowing; PEP 585 aliases ignored)
+    canon_old_ret = _canonicalize_py_annotation(old_sym.return_annotation)
+    canon_new_ret = _canonicalize_py_annotation(new_sym.return_annotation)
+    if canon_old_ret != canon_new_ret and canon_old_ret is not None:
+        old_inner = _strip_optional_type(canon_old_ret)
+        new_inner = _strip_optional_type(canon_new_ret)
+        is_optional_narrowing = (
+            old_inner is not None
+            and old_inner != canon_old_ret
+            and canon_new_ret == old_inner
+        )
+        _ = new_inner
         findings.append(
             (
                 "return_type_changed",
-                True,
-                "medium",
-                f"Return type annotation of '{old_sym.qualified_name}' changed from '{old_sym.return_annotation}' to '{new_sym.return_annotation}'.",
+                not is_optional_narrowing,
+                "low" if is_optional_narrowing else "medium",
+                f"Return type annotation of '{old_sym.qualified_name}' changed from '{old_sym.return_annotation}' to '{new_sym.return_annotation}'"
+                + (" (non-Optional narrowing)." if is_optional_narrowing else "."),
             )
         )
 
-    # Check decorator removal/change (diff.py:L503 gap)
-    if old_sym.decorators != new_sym.decorators:
+    # Check decorator removal/change (ignore static-typechecker @override markers)
+    old_decs = [d for d in old_sym.decorators if d not in ("override", "typing.override")]
+    new_decs = [d for d in new_sym.decorators if d not in ("override", "typing.override")]
+    if old_decs != new_decs:
         findings.append(
             (
                 "decorator_changed",
                 True,
                 "medium",
-                f"Decorators on '{old_sym.qualified_name}' changed from {old_sym.decorators} to {new_sym.decorators}.",
+                f"Decorators on '{old_sym.qualified_name}' changed from {old_decs} to {new_decs}.",
             )
         )
 
@@ -1095,19 +1201,23 @@ _CPP_FUNC_RE = re.compile(
     re.MULTILINE,
 )
 _JAVA_CS_CLASS_RE = re.compile(
-    r"^\s*(?:public|protected|internal)?\s*(?:abstract\s+|final\s+|static\s+|sealed\s+|partial\s+)*(?P<kind>class|interface|enum|record)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)",
+    r"^\s*(?:public|protected|private|internal)?\s*(?:abstract\s+|final\s+|static\s+|sealed\s+|partial\s+|open\s+|data\s+|enum\s+)*(?P<kind>class|interface|enum|record|trait|object)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)",
     re.MULTILINE,
 )
 _JAVA_CS_METHOD_RE = re.compile(
-    r"^\s*(?:public|protected)\s+(?:static\s+|final\s+|abstract\s+|synchronized\s+|virtual\s+|override\s+|async\s+)*(?:<[^>]+>\s+)?(?P<ret>[A-Za-z0-9_<>\[\].,?\s]+)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\((?P<params>[^)]*)\)",
+    r"^\s*(?P<mods>(?:(?:public|protected|private|internal|static|final|abstract|synchronized|virtual|override|async|sealed|readonly|extern|unsafe|new|partial|native|strictfp|default)\s+)*)(?:<[^>]+>\s+)?(?P<ret>[A-Za-z0-9_<>\[\].,?\s]+?)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\((?P<params>[^)]*)\)",
+    re.MULTILINE,
+)
+_KOTLIN_SCALA_FUNC_RE = re.compile(
+    r"^\s*(?P<mods>(?:(?:public|protected|private|internal|open|override|final|abstract|suspend|inline|infix|operator|tailrec|external)\s+)*)(?:fun|def)\s+(?:<[^>]+>\s+|\[[^\]]+\]\s+)?(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\((?P<params>[^)]*)\)(?:\s*:\s*(?P<ret>[A-Za-z0-9_<>\[\].,?\s*|]+?))?(?:\s*[={]|\s*$)",
     re.MULTILINE,
 )
 _RB_PHP_SWIFT_FUNC_RE = re.compile(
-    r"^\s*(?:(?:public|protected|private|static|final|abstract)\s+)*(?:def|function|func)\s+(?P<name>(?:self\.)?[A-Za-z_][A-Za-z0-9_?!]*)\s*(?:\((?P<params>[^)]*)\))?(?:\s*(?::|->)\s*(?P<ret>[^{;\n]+))?",
+    r"^\s*(?P<mods>(?:(?:public|protected|private|internal|open|fileprivate|static|final|abstract|async|override|mutating)\s+)*)(?:def|function|func)\s+(?P<name>(?:self\.)?[A-Za-z_][A-Za-z0-9_?!]*)\s*(?:\((?P<params>[^)]*)\))?(?:\s*(?:async\s+)?(?::|->)\s*(?P<ret>[^{;\n]+))?",
     re.MULTILINE,
 )
 _RB_PHP_SWIFT_CLASS_RE = re.compile(
-    r"^\s*(?:(?:public|final|abstract|readonly)\s+)*(?P<kind>class|module|interface|trait|struct|protocol|enum)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)",
+    r"^\s*(?P<mods>(?:(?:public|protected|private|internal|open|final|abstract|readonly)\s+)*)(?P<kind>class|module|interface|trait|struct|protocol|enum)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)",
     re.MULTILINE,
 )
 _CPP_CONTROL_KEYWORDS = {
@@ -1122,69 +1232,349 @@ _JS_CONTROL_KEYWORDS = {
 }
 
 
-def _parse_ts_js_symbols(source: str) -> dict[str, tuple[str, int, str, list[str], str | None]]:
-    """Extract exported functions, classes, methods, interfaces, enums, and arrow functions from TypeScript/JavaScript files.
-    Uses pure-Python structural pattern analysis without requiring external Node.js or native compiler dependencies.
-    Returns dict: name -> (kind, line_no, signature_str, param_list, return_type)
-    """
-    symbols: dict[str, tuple[str, int, str, list[str], str | None]] = {}
-    for match in _TS_EXPORT_FUNC_RE.finditer(source):
-        name = match.group("name")
-        params_raw = " ".join(match.group("params").split())
-        ret_raw = " ".join((match.group("ret") or "").split()) or None
-        line_no = source.count("\n", 0, match.start()) + 1
-        param_items = [p.strip() for p in params_raw.split(",") if p.strip()]
-        sig = f"export function {name}({params_raw})" + (f": {ret_raw}" if ret_raw else "")
-        symbols[name] = ("function", line_no, sig, param_items, ret_raw)
+def _parse_multilang_symbols_rich_fallback(
+    source: str,
+    file_path: str,
+) -> dict[str, ParsedMultiLangSymbol]:
+    """Hardened pure-Python structural symbol extractor with canonicalized modifiers & visibility."""
+    family = get_language_family(file_path)
+    symbols: dict[str, ParsedMultiLangSymbol] = {}
 
-    for match in _TS_EXPORT_ARROW_RE.finditer(source):
-        name = match.group("name")
-        if name in symbols or name.startswith("_"):
-            continue
-        params_raw = " ".join(match.group("params").split())
-        ret_raw = " ".join((match.group("ret") or "").split()) or None
-        line_no = source.count("\n", 0, match.start()) + 1
-        param_items = [p.strip() for p in params_raw.split(",") if p.strip()]
-        sig = f"export const {name} = ({params_raw})" + (f": {ret_raw}" if ret_raw else "") + " =>"
-        symbols[name] = ("function", line_no, sig, param_items, ret_raw)
+    def _build_sym(
+        qname: str,
+        short: str,
+        owner: str | None,
+        skind: str,
+        line_no: int,
+        vis: str,
+        mods: frozenset[str],
+        raw_params: str,
+        ret_type: str | None,
+        sig: str,
+        has_export: bool = False,
+    ) -> ParsedMultiLangSymbol:
+        params, ntypes, req_cnt = _parse_params_from_raw(raw_params, family)
+        is_pub, exp_reason = compute_multilang_visibility(
+            family=family,
+            file_path=file_path,
+            short_name=short,
+            visibility=vis,
+            modifiers=mods,
+            owner_type=owner,
+            has_export=has_export,
+        )
+        return ParsedMultiLangSymbol(
+            qualified_name=qname,
+            short_name=short,
+            owner_type=owner,
+            symbol_kind=skind,
+            start_line=line_no,
+            end_line=line_no,
+            visibility=vis,
+            is_public_api=is_pub,
+            export_reason=exp_reason,
+            modifiers=mods,
+            params=params,
+            normalized_param_types=ntypes,
+            required_param_count=req_cnt,
+            return_type=ret_type,
+            signature_str=sig,
+            parser_backend="structural_fallback",
+        )
 
-    for match in _TS_EXPORT_CLASS_RE.finditer(source):
-        name = match.group("name")
-        base = (match.group("base") or "").strip() or None
-        line_no = source.count("\n", 0, match.start()) + 1
-        sig = f"export class {name}" + (f" extends {base}" if base else "")
-        symbols[name] = ("class", line_no, sig, [], base)
+    if family == "ts_js":
+        for match in _TS_EXPORT_FUNC_RE.finditer(source):
+            name = match.group("name")
+            params_raw = " ".join(match.group("params").split())
+            ret_raw = " ".join((match.group("ret") or "").split()) or None
+            line_no = source.count("\n", 0, match.start()) + 1
+            sig = f"export function {name}({params_raw})" + (f": {ret_raw}" if ret_raw else "")
+            symbols[name] = _build_sym(
+                name, name, None, "function", line_no, "public", frozenset({"export"}), params_raw, ret_raw, sig, has_export=True
+            )
+        for match in _TS_EXPORT_ARROW_RE.finditer(source):
+            name = match.group("name")
+            if name in symbols or name.startswith("_"):
+                continue
+            params_raw = " ".join(match.group("params").split())
+            ret_raw = " ".join((match.group("ret") or "").split()) or None
+            line_no = source.count("\n", 0, match.start()) + 1
+            is_exp = "export" in match.group(0).split("=")[0]
+            sig = f"{'export ' if is_exp else ''}const {name} = ({params_raw})" + (f": {ret_raw}" if ret_raw else "") + " =>"
+            symbols[name] = _build_sym(
+                name,
+                name,
+                None,
+                "function",
+                line_no,
+                "public" if is_exp else "internal",
+                frozenset({"export"}) if is_exp else frozenset(),
+                params_raw,
+                ret_raw,
+                sig,
+                has_export=is_exp,
+            )
+        for match in _TS_EXPORT_CLASS_RE.finditer(source):
+            name = match.group("name")
+            base = (match.group("base") or "").strip() or None
+            line_no = source.count("\n", 0, match.start()) + 1
+            sig = f"export class {name}" + (f" extends {base}" if base else "")
+            symbols[name] = _build_sym(
+                name, name, None, "class", line_no, "public", frozenset({"export"}), "", base, sig, has_export=True
+            )
+        for match in _TS_EXPORT_TYPE_RE.finditer(source):
+            name = match.group("name")
+            kind_raw = match.group("kind").lower()
+            kind_name = "enum" if kind_raw == "enum" else "interface"
+            line_no = source.count("\n", 0, match.start()) + 1
+            sig = f"export {kind_raw} {name}"
+            symbols[name] = _build_sym(
+                name, name, None, kind_name, line_no, "public", frozenset({"export"}), "", None, sig, has_export=True
+            )
+        for match in _JS_TOP_FUNC_RE.finditer(source):
+            name = match.group("name")
+            if name in symbols or name in _JS_CONTROL_KEYWORDS or name.startswith("_"):
+                continue
+            params_raw = " ".join(match.group("params").split())
+            line_no = source.count("\n", 0, match.start()) + 1
+            sig = f"function {name}({params_raw})"
+            symbols[name] = _build_sym(name, name, None, "function", line_no, "internal", frozenset(), params_raw, None, sig)
+        for match in _TS_CLASS_METHOD_RE.finditer(source):
+            name = match.group("name")
+            if name in symbols or name in _JS_CONTROL_KEYWORDS or name.startswith(("_", "#")):
+                continue
+            params_raw = " ".join(match.group("params").split())
+            ret_raw = " ".join((match.group("ret") or "").split()) or None
+            line_no = source.count("\n", 0, match.start()) + 1
+            sig = f"{name}({params_raw})" + (f": {ret_raw}" if ret_raw else "")
+            symbols[name] = _build_sym(
+                name, name, None, "method", line_no, "public", frozenset(), params_raw, ret_raw, sig, has_export="export " in source
+            )
+        return symbols
 
-    for match in _TS_EXPORT_TYPE_RE.finditer(source):
-        name = match.group("name")
-        kind_raw = match.group("kind").lower()
-        kind_name = "enum" if kind_raw == "enum" else "interface"
-        line_no = source.count("\n", 0, match.start()) + 1
-        sig = f"export {kind_raw} {name}"
-        symbols[name] = (kind_name, line_no, sig, [], None)
+    if family == "go":
+        for m in _GO_FUNC_RE.finditer(source):
+            name = m.group("name")
+            recv = (m.group("recv") or "").strip()
+            params_raw = " ".join(m.group("params").split())
+            ret_raw = " ".join((m.group("ret") or "").split()) or None
+            line_no = source.count("\n", 0, m.start()) + 1
+            qname = name
+            recv_type = None
+            if recv:
+                recv_type = recv.split()[-1].lstrip("*").split("[", 1)[0]
+                qname = f"{recv_type}.{name}"
+            sig = f"func {f'({recv}) ' if recv else ''}{name}({params_raw})" + (f" {ret_raw}" if ret_raw else "")
+            vis = "public" if name[:1].isupper() else "internal"
+            symbols[qname] = _build_sym(
+                qname, name, recv_type, "method" if recv else "function", line_no, vis, frozenset(), params_raw, ret_raw, sig
+            )
+        for m in _GO_TYPE_RE.finditer(source):
+            name = m.group("name")
+            kind_raw = m.group("kind")
+            line_no = source.count("\n", 0, m.start()) + 1
+            vis = "public" if name[:1].isupper() else "internal"
+            symbols[name] = _build_sym(
+                name, name, None, "interface" if kind_raw == "interface" else "class", line_no, vis, frozenset(), "", None, f"type {name} {kind_raw}"
+            )
+        return symbols
 
-    for match in _JS_TOP_FUNC_RE.finditer(source):
-        name = match.group("name")
-        if name in symbols or name in _JS_CONTROL_KEYWORDS or name.startswith("_"):
-            continue
-        params_raw = " ".join(match.group("params").split())
-        line_no = source.count("\n", 0, match.start()) + 1
-        param_items = [p.strip() for p in params_raw.split(",") if p.strip()]
-        sig = f"function {name}({params_raw})"
-        symbols[name] = ("function", line_no, sig, param_items, None)
+    if family == "rust":
+        for m in _RUST_FN_RE.finditer(source):
+            name = m.group("name")
+            vis_raw = (m.group("vis") or "").strip()
+            vis = "public" if vis_raw == "pub" else ("internal" if vis_raw.startswith("pub(") else "private")
+            params_raw = " ".join(m.group("params").split())
+            ret_raw = " ".join((m.group("ret") or "").split()) or None
+            line_no = source.count("\n", 0, m.start()) + 1
+            sig = f"{'pub ' if vis == 'public' else ''}fn {name}({params_raw})" + (f" -> {ret_raw}" if ret_raw else "")
+            symbols[name] = _build_sym(
+                name, name, None, "function", line_no, vis, frozenset({vis_raw}) if vis_raw else frozenset(), params_raw, ret_raw, sig
+            )
+        for m in _RUST_TYPE_RE.finditer(source):
+            name = m.group("name")
+            vis_raw = (m.group("vis") or "").strip()
+            vis = "public" if vis_raw == "pub" else ("internal" if vis_raw.startswith("pub(") else "private")
+            kind_raw = m.group("kind")
+            kind_mapped = "enum" if kind_raw == "enum" else ("interface" if kind_raw == "trait" else "class")
+            line_no = source.count("\n", 0, m.start()) + 1
+            symbols[name] = _build_sym(
+                name, name, None, kind_mapped, line_no, vis, frozenset(), "", None, f"{'pub ' if vis == 'public' else ''}{kind_raw} {name}"
+            )
+        return symbols
 
-    for match in _TS_CLASS_METHOD_RE.finditer(source):
-        name = match.group("name")
-        if name in symbols or name in _JS_CONTROL_KEYWORDS or name.startswith(("_", "#")):
-            continue
-        params_raw = " ".join(match.group("params").split())
-        ret_raw = " ".join((match.group("ret") or "").split()) or None
-        line_no = source.count("\n", 0, match.start()) + 1
-        param_items = [p.strip() for p in params_raw.split(",") if p.strip()]
-        sig = f"{name}({params_raw})" + (f": {ret_raw}" if ret_raw else "")
-        symbols[name] = ("method", line_no, sig, param_items, ret_raw)
+    if family == "c_cpp":
+        cpp_src = _preprocess_cpp_export_macros(source)
+        for m in _CPP_CLASS_RE.finditer(cpp_src):
+            name = m.group("name")
+            if name in _CPP_CONTROL_KEYWORDS or (name.isupper() and len(name) >= 3):
+                continue
+            kind_raw = " ".join(m.group("kind").split())
+            base = " ".join((m.group("base") or "").split()) or None
+            line_no = cpp_src.count("\n", 0, m.start()) + 1
+            kind_mapped = "enum" if "enum" in kind_raw else "class"
+            sig = f"{kind_raw} {name}" + (f" : {base}" if base else "")
+            _store_symbol(symbols, _build_sym(name, name, None, kind_mapped, line_no, "public", frozenset(), "", base, sig))
+        for m in _CPP_FUNC_RE.finditer(cpp_src):
+            ret_raw = " ".join((m.group("ret") or "").split())
+            ret_tokens = {tok.strip("*&") for tok in ret_raw.split()}
+            name = m.group("name").strip()
+            short_n = name.split("::")[-1]
+            params_raw = " ".join(m.group("params").split())
+            if (
+                short_n in _CPP_CONTROL_KEYWORDS
+                or bool(ret_tokens & _CPP_CONTROL_KEYWORDS)
+                or short_n.startswith("~")
+                or (short_n.isupper() and len(short_n) >= 3)
+                or '"' in params_raw
+                or "'" in params_raw
+            ):
+                continue
+            line_no = cpp_src.count("\n", 0, m.start()) + 1
+            mods_prefix = m.group(0)[: m.start("ret") - m.start()]
+            mods, _ = normalize_modifiers_and_return(mods_prefix)
+            if "static" in ret_tokens:
+                mods = mods | {"static"}
+            vis = "internal" if ("static" in mods or short_n.startswith("_")) else "public"
+            owner = name.rsplit("::", 1)[0] if "::" in name else None
+            sig = f"{name}({params_raw})"
+            _store_symbol(
+                symbols,
+                _build_sym(
+                    name,
+                    short_n,
+                    owner,
+                    "method" if "::" in name else "function",
+                    line_no,
+                    vis,
+                    mods,
+                    params_raw,
+                    normalize_type_expr(ret_raw) or None,
+                    sig,
+                ),
+                allow_overload=True,
+            )
+        return symbols
+
+    if family in ("csharp", "java", "kotlin", "scala"):
+        default_vis = "public" if family in ("kotlin", "scala") else "internal"
+        first_class: str | None = None
+        class_spans: list[tuple[int, str, str]] = []
+        for m in _JAVA_CS_CLASS_RE.finditer(source):
+            name = m.group("name")
+            if first_class is None:
+                first_class = name
+            kind_raw = m.group("kind").lower()
+            kind_mapped = "enum" if kind_raw == "enum" else ("interface" if kind_raw in ("interface", "trait") else "class")
+            line_no = source.count("\n", 0, m.start()) + 1
+            cls_mods_prefix = m.group(0)[: m.start("kind") - m.start()]
+            cls_mods, _ = normalize_modifiers_and_return(cls_mods_prefix)
+            vis = resolve_visibility_from_modifiers(cls_mods, default_visibility=default_vis)
+            class_spans.append((m.start(), name, vis))
+            _store_symbol(
+                symbols,
+                _build_sym(name, name, None, kind_mapped, line_no, vis, cls_mods, "", None, f"{kind_raw} {name}"),
+            )
+
+        def _enclosing_class_info(pos: int) -> tuple[str | None, str]:
+            owner_cls = first_class
+            owner_vis = "public"
+            for c_pos, c_name, c_vis in class_spans:
+                if c_pos <= pos:
+                    owner_cls = c_name
+                    owner_vis = c_vis
+                else:
+                    break
+            return owner_cls, owner_vis
+
+        if family in ("kotlin", "scala"):
+            for m in _KOTLIN_SCALA_FUNC_RE.finditer(source):
+                name = m.group("name")
+                if name in _CPP_CONTROL_KEYWORDS:
+                    continue
+                mods_raw = (m.group("mods") or "").strip()
+                mods, _ = normalize_modifiers_and_return(mods_raw)
+                vis = resolve_visibility_from_modifiers(mods, default_visibility=default_vis)
+                owner_cls, owner_vis = _enclosing_class_info(m.start())
+                if owner_vis in ("private", "internal") and vis in ("public", "protected"):
+                    vis = owner_vis
+                params_raw = " ".join(m.group("params").split())
+                ret_raw = " ".join((m.group("ret") or "").split()) or None
+                line_no = source.count("\n", 0, m.start()) + 1
+                sorted_m = " ".join(sorted(mods))
+                sig = f"{sorted_m + ' ' if sorted_m else ''}{name}({params_raw})" + (f": {ret_raw}" if ret_raw else "")
+                _store_symbol(
+                    symbols,
+                    _build_sym(name, name, owner_cls, "method", line_no, vis, mods, params_raw, ret_raw, sig),
+                    allow_overload=True,
+                )
+        else:
+            for m in _JAVA_CS_METHOD_RE.finditer(source):
+                name = m.group("name")
+                if name in _CPP_CONTROL_KEYWORDS:
+                    continue
+                mods_and_ret = f"{m.group('mods') or ''} {m.group('ret')}"
+                mods, pure_ret = normalize_modifiers_and_return(mods_and_ret)
+                if pure_ret is None or any(tok in _CPP_CONTROL_KEYWORDS for tok in pure_ret.split()):
+                    continue
+                vis = resolve_visibility_from_modifiers(mods, default_visibility=default_vis)
+                owner_cls, owner_vis = _enclosing_class_info(m.start())
+                if owner_vis in ("private", "internal") and vis in ("public", "protected"):
+                    vis = owner_vis
+                params_raw = " ".join(m.group("params").split())
+                line_no = source.count("\n", 0, m.start()) + 1
+                sorted_m = " ".join(sorted(mods))
+                sig = f"{sorted_m + ' ' if sorted_m else ''}{pure_ret} {name}({params_raw})"
+                _store_symbol(
+                    symbols,
+                    _build_sym(name, name, owner_cls, "method", line_no, vis, mods, params_raw, pure_ret, sig),
+                    allow_overload=True,
+                )
+        return symbols
+
+    if family in ("ruby", "php", "swift"):
+        default_vis = "internal" if family == "swift" else "public"
+        first_class = None
+        for m in _RB_PHP_SWIFT_CLASS_RE.finditer(source):
+            name = m.group("name")
+            if first_class is None:
+                first_class = name
+            kind_raw = m.group("kind").lower()
+            kind_mapped = "enum" if kind_raw == "enum" else ("interface" if kind_raw in ("interface", "trait", "protocol") else "class")
+            line_no = source.count("\n", 0, m.start()) + 1
+            c_mods, _ = normalize_modifiers_and_return(m.group("mods") or "")
+            vis = resolve_visibility_from_modifiers(c_mods, default_visibility=default_vis)
+            symbols[name] = _build_sym(name, name, None, kind_mapped, line_no, vis, c_mods, "", None, f"{kind_raw} {name}")
+        for m in _RB_PHP_SWIFT_FUNC_RE.finditer(source):
+            name = m.group("name")
+            f_mods, _ = normalize_modifiers_and_return(m.group("mods") or "")
+            vis = resolve_visibility_from_modifiers(f_mods, default_visibility=default_vis)
+            params_raw = " ".join((m.group("params") or "").split())
+            ret_raw = " ".join((m.group("ret") or "").split()) or None
+            line_no = source.count("\n", 0, m.start()) + 1
+            sig = f"def {name}({params_raw})" + (f" -> {ret_raw}" if ret_raw else "")
+            symbols[name] = _build_sym(
+                name, name.split(".")[-1], first_class, "method" if first_class else "function", line_no, vis, f_mods, params_raw, ret_raw, sig
+            )
+        return symbols
 
     return symbols
+
+
+def _parse_ts_js_symbols(source: str) -> dict[str, tuple[str, int, str, list[str], str | None]]:
+    """Extract TypeScript/JavaScript symbols cleanly (backwards-compatible wrapper)."""
+    return _parse_multilang_symbols_uncached(source, "module.ts")
+
+
+def _parse_multilang_symbols_rich(
+    source: str,
+    file_path: str,
+) -> dict[str, ParsedMultiLangSymbol]:
+    """Parse structured multi-language symbols using Tree-sitter with fallback parser support."""
+    ts_res = parse_multilang_symbols_treesitter(source, file_path)
+    if ts_res is not None:
+        return ts_res
+    return _parse_multilang_symbols_rich_fallback(source, file_path)
 
 
 def _parse_multilang_symbols(
@@ -1214,125 +1604,12 @@ def _parse_multilang_symbols_uncached(
     source: str,
     file_path: str,
 ) -> dict[str, tuple[str, int, str, list[str], str | None]]:
-    """Extract structural symbols (functions, methods, classes, structs, interfaces, enums) across
-    TypeScript/JS, C/C++, Go, Rust, Java, Kotlin, Scala, C#, Ruby, PHP, and Swift.
-    Returns dict: name -> (symbol_kind, line_no, signature_str, param_list, return_type)
-    """
-    if file_path.endswith((".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")):
-        return _parse_ts_js_symbols(source)
-
-    symbols: dict[str, tuple[str, int, str, list[str], str | None]] = {}
-
-    if file_path.endswith(".go"):
-        for m in _GO_FUNC_RE.finditer(source):
-            name = m.group("name")
-            recv = (m.group("recv") or "").strip()
-            params_raw = " ".join(m.group("params").split())
-            ret_raw = " ".join((m.group("ret") or "").split()) or None
-            line_no = source.count("\n", 0, m.start()) + 1
-            param_items = [p.strip() for p in params_raw.split(",") if p.strip()]
-            qname = name
-            if recv:
-                recv_type = recv.split()[-1].lstrip("*")
-                qname = f"{recv_type}.{name}"
-            sig = f"func {f'({recv}) ' if recv else ''}{name}({params_raw})" + (f" {ret_raw}" if ret_raw else "")
-            symbols[qname] = ("method" if recv else "function", line_no, sig, param_items, ret_raw)
-        for m in _GO_TYPE_RE.finditer(source):
-            name = m.group("name")
-            kind_raw = m.group("kind")
-            line_no = source.count("\n", 0, m.start()) + 1
-            symbols[name] = ("interface" if kind_raw == "interface" else "class", line_no, f"type {name} {kind_raw}", [], None)
-        return symbols
-
-    if file_path.endswith(".rs"):
-        for m in _RUST_FN_RE.finditer(source):
-            name = m.group("name")
-            vis = (m.group("vis") or "").strip()
-            params_raw = " ".join(m.group("params").split())
-            ret_raw = " ".join((m.group("ret") or "").split()) or None
-            line_no = source.count("\n", 0, m.start()) + 1
-            param_items = [p.strip() for p in params_raw.split(",") if p.strip() and p.strip() not in ("self", "&self", "&mut self")]
-            sig = f"{'pub ' if vis else ''}fn {name}({params_raw})" + (f" -> {ret_raw}" if ret_raw else "")
-            symbols[name] = ("function", line_no, sig, param_items, ret_raw)
-        for m in _RUST_TYPE_RE.finditer(source):
-            name = m.group("name")
-            vis = (m.group("vis") or "").strip()
-            kind_raw = m.group("kind")
-            kind_mapped = "enum" if kind_raw == "enum" else ("interface" if kind_raw == "trait" else "class")
-            line_no = source.count("\n", 0, m.start()) + 1
-            symbols[name] = (kind_mapped, line_no, f"{'pub ' if vis else ''}{kind_raw} {name}", [], None)
-        return symbols
-
-    if file_path.endswith((".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx")):
-        for m in _CPP_CLASS_RE.finditer(source):
-            name = m.group("name")
-            if name in _CPP_CONTROL_KEYWORDS or (name.isupper() and len(name) >= 3):
-                continue
-            kind_raw = " ".join(m.group("kind").split())
-            base = " ".join((m.group("base") or "").split()) or None
-            line_no = source.count("\n", 0, m.start()) + 1
-            kind_mapped = "enum" if "enum" in kind_raw else "class"
-            sig = f"{kind_raw} {name}" + (f" : {base}" if base else "")
-            symbols[name] = (kind_mapped, line_no, sig, [], base)
-        for m in _CPP_FUNC_RE.finditer(source):
-            ret_raw = " ".join((m.group("ret") or "").split())
-            ret_tokens = {tok.strip("*&") for tok in ret_raw.split()}
-            name = m.group("name").strip()
-            short_n = name.split("::")[-1]
-            params_raw = " ".join(m.group("params").split())
-            if (
-                short_n in _CPP_CONTROL_KEYWORDS
-                or bool(ret_tokens & _CPP_CONTROL_KEYWORDS)
-                or short_n.startswith("~")
-                or (short_n.isupper() and len(short_n) >= 3)
-                or '"' in params_raw
-                or "'" in params_raw
-                or name in symbols
-            ):
-                continue
-            line_no = source.count("\n", 0, m.start()) + 1
-            param_items = [p.strip() for p in params_raw.split(",") if p.strip() and p.strip() != "void"]
-            sig = f"{name}({params_raw})"
-            symbols[name] = ("method" if "::" in name else "function", line_no, sig, param_items, None)
-        return symbols
-
-    if file_path.endswith((".java", ".kt", ".scala", ".cs")):
-        for m in _JAVA_CS_CLASS_RE.finditer(source):
-            name = m.group("name")
-            kind_raw = m.group("kind").lower()
-            kind_mapped = "enum" if kind_raw == "enum" else ("interface" if kind_raw == "interface" else "class")
-            line_no = source.count("\n", 0, m.start()) + 1
-            symbols[name] = (kind_mapped, line_no, f"{kind_raw} {name}", [], None)
-        for m in _JAVA_CS_METHOD_RE.finditer(source):
-            name = m.group("name")
-            if name in _CPP_CONTROL_KEYWORDS or name in symbols:
-                continue
-            ret_raw = " ".join(m.group("ret").split())
-            params_raw = " ".join(m.group("params").split())
-            line_no = source.count("\n", 0, m.start()) + 1
-            param_items = [p.strip() for p in params_raw.split(",") if p.strip()]
-            sig = f"{ret_raw} {name}({params_raw})"
-            symbols[name] = ("method", line_no, sig, param_items, ret_raw)
-        return symbols
-
-    if file_path.endswith((".rb", ".php", ".swift")):
-        for m in _RB_PHP_SWIFT_CLASS_RE.finditer(source):
-            name = m.group("name")
-            kind_raw = m.group("kind").lower()
-            kind_mapped = "enum" if kind_raw == "enum" else ("interface" if kind_raw in ("interface", "trait", "protocol") else "class")
-            line_no = source.count("\n", 0, m.start()) + 1
-            symbols[name] = (kind_mapped, line_no, f"{kind_raw} {name}", [], None)
-        for m in _RB_PHP_SWIFT_FUNC_RE.finditer(source):
-            name = m.group("name")
-            params_raw = " ".join((m.group("params") or "").split())
-            ret_raw = " ".join((m.group("ret") or "").split()) or None
-            line_no = source.count("\n", 0, m.start()) + 1
-            param_items = [p.strip() for p in params_raw.split(",") if p.strip()]
-            sig = f"def {name}({params_raw})" + (f" -> {ret_raw}" if ret_raw else "")
-            symbols[name] = ("function", line_no, sig, param_items, ret_raw)
-        return symbols
-
-    return symbols
+    """Extract structural symbols across non-Python languages as compact 5-tuples."""
+    rich = _parse_multilang_symbols_rich(source, file_path)
+    return {
+        qname: (sym.symbol_kind, sym.start_line, sym.signature_str, list(sym.params), sym.return_type)
+        for qname, sym in rich.items()
+    }
 
 
 def _extract_brace_or_end_body(source: str, start_idx: int, is_ruby: bool = False) -> str:
@@ -1646,13 +1923,215 @@ def _count_call_args_in_text(line: str, func_name: str) -> int | None:
     return count
 
 
+_COMPILED_LANGUAGE_FAMILIES = frozenset(
+    {"go", "rust", "c_cpp", "csharp", "java", "kotlin", "scala", "swift"}
+)
+_POSITIONAL_ONLY_FAMILIES = frozenset({"go", "c_cpp", "rust", "java", "ts_js"})
+_GENERIC_CALLER_NAMES = frozenset(
+    {
+        "list", "dict", "set", "tuple", "str", "int", "float", "bool", "open",
+        "len", "format", "id", "input", "type", "next", "iter", "filter",
+        "map", "zip", "print", "sum", "min", "max", "hash", "range", "super",
+        "object", "vars", "dir", "compile",
+        "main", "run", "start", "stop", "init", "setup", "teardown", "close",
+        "read", "write", "get", "set", "put", "post", "delete", "update",
+        "create", "remove", "add", "clear", "reset", "check", "parse",
+        "parse_args", "build", "load", "save", "dump", "send", "recv",
+        "free", "alloc", "malloc", "is_available", "available", "register",
+        "eval", "unregister", "handle", "process", "render", "validate", "connect",
+        "disconnect", "flush", "sync", "wait", "notify", "emit", "on", "off",
+        "clone", "copy", "equals", "toString", "Dispose", "ToString",
+        "Equals", "GetHashCode", "hashCode", "__construct", "__destruct",
+        "__invoke", "__toString", "__call", "operator()",
+    }
+)
+_GENERIC_RECEIVERS = frozenset(
+    {
+        "self", "this", "cls", "super", "base", "s", "c", "client", "agent",
+        "svc", "service", "instance", "obj", "x", "m", "p", "v", "target",
+        "res", "ctx",
+    }
+)
+_OWNER_SUFFIX_RE = re.compile(
+    r"(?:Service|Client|Agent|Manager|Handler|Controller|Provider|Impl|Repository|Helper|Factory|Store|Parser)$",
+    re.IGNORECASE,
+)
+_DECL_LINE_RE = re.compile(
+    r"^\s*(?:func|fn|def|function|public|protected|private|internal|static|virtual|override|abstract|extern|inline|constexpr|consteval|explicit|friend|sealed|async|suspend|open|class|struct|interface|enum|type)\b"
+)
+_CPP_LINE_DECL_RE = re.compile(
+    r"^\s*[A-Za-z_][A-Za-z0-9_<>*&:\s]+\s+[A-Za-z_][A-Za-z0-9_:*]*\s*\([^)]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?(?:\{|$)"
+)
+_PY_DYN_GREP_REGEX = r"(getattr|hasattr|setattr|eval|exec|__import__|import_module|globals|locals)\("
+_TS_DYN_GREP_REGEX = r"(Reflect\.apply|\beval\s*\(|\[[A-Za-z_$][A-Za-z0-9_$.]*\]\s*\()"
+
+
+def _receiver_matches_owner(receiver: str | None, owner_type: str | None) -> bool:
+    """Return False when a specific non-generic call receiver conflicts with owner_type."""
+    if not receiver or not owner_type:
+        return True
+    r_low = receiver.lower().strip()
+    if r_low in _GENERIC_RECEIVERS or len(r_low) <= 1:
+        return True
+    o_low = owner_type.lower().strip()
+    if r_low in o_low or o_low in r_low:
+        return True
+    o_stem = _OWNER_SUFFIX_RE.sub("", o_low).strip()
+    if len(o_stem) >= 3 and (o_stem in r_low or r_low in o_stem):
+        return True
+    return False
+
+
+def _strip_comments_preserve_newlines(source: str, family: str) -> str:
+    """Replace block/line comments with equal newline counts for line-accurate fallback call scans."""
+    out = re.sub(
+        r"/\*[\s\S]*?\*/",
+        lambda m: "\n" * m.group(0).count("\n"),
+        source,
+    )
+    if family == "ruby":
+        out = re.sub(r"#[^\n]*", "", out)
+    else:
+        out = re.sub(r"//[^\n]*", "", out)
+        if family in ("php",):
+            out = re.sub(r"#[^\n]*", "", out)
+    return out
+
+
+def _extract_multilang_calls_fallback(
+    content: str,
+    rel_path: str,
+    target_short_names: set[str],
+    call_regex: re.Pattern[str] | None,
+) -> list[ParsedCallSite]:
+    """Extract call sites cleanly without Tree-sitter, skipping comments, strings, and declarations."""
+    if call_regex is None or not target_short_names:
+        return []
+    family = get_language_family(rel_path)
+    cleaned = _strip_comments_preserve_newlines(content, family)
+    raw_lines = content.splitlines()
+    clean_lines = cleaned.splitlines()
+    calls: list[ParsedCallSite] = []
+
+    for idx, cline in enumerate(clean_lines, start=1):
+        stripped = cline.strip()
+        if not stripped:
+            continue
+        if _DECL_LINE_RE.match(stripped):
+            continue
+        if family == "c_cpp" and _CPP_LINE_DECL_RE.match(stripped) and "=" not in stripped.split("(", 1)[0]:
+            continue
+        # Blank out quoted literals to ignore symbol names inside string constants
+        no_str = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`', '""', cline)
+        if not call_regex.search(no_str):
+            continue
+        raw_snippet = raw_lines[idx - 1].strip()[:160] if idx - 1 < len(raw_lines) else stripped[:160]
+        for m in call_regex.finditer(no_str):
+            short_n = m.group(1)
+            prefix = no_str[: m.start()].rstrip()
+            recv: str | None = None
+            m_recv = re.search(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\.|::|->|\\)\s*$", prefix)
+            if m_recv:
+                recv = m_recv.group(1)
+            # Skip unannotated definition headers like `Ret Foo(a, b) {` without `=` or `return` or `await`
+            if (
+                not recv
+                and stripped.endswith("{")
+                and "=" not in prefix
+                and not prefix.lstrip().startswith(("return", "if", "while", "for", "else", "await"))
+                and re.match(r"^[A-Za-z_][A-Za-z0-9_<>*&:\s]+\s+$", prefix)
+            ):
+                continue
+            calls.append(
+                ParsedCallSite(
+                    callee_name=short_n,
+                    receiver=recv,
+                    line_number=idx,
+                    arg_count=_count_call_args_in_text(no_str, short_n),
+                    call_snippet=raw_snippet,
+                )
+            )
+    return calls
+
+
+def _has_multilang_scope_affinity(content: str, caller_path: str, def_path: str, owner_type: str | None) -> bool:
+    """Return True if caller_path belongs to the same package/dir or imports/includes def_path."""
+    if caller_path == def_path:
+        return True
+    caller_dir = Path(caller_path).parent.as_posix()
+    def_dir = Path(def_path).parent.as_posix()
+    if caller_dir == def_dir:
+        return True
+    def_stem = Path(def_path).stem
+    def_name = Path(def_path).name
+    for line in content.splitlines()[:120]:
+        s = line.strip()
+        if s.startswith(("#include", "import ", "using ", "use ", "require", "from ")) or " from " in s:
+            if def_name in s or (len(def_stem) >= 3 and def_stem in s) or (owner_type and len(owner_type) >= 3 and owner_type in s):
+                return True
+    return False
+
+
+def _python_import_matches_def(
+    file_imports: dict[str, str],
+    callee_name: str | None,
+    def_file_path: str,
+    owner_t: str | None,
+) -> bool:
+    """Return True when file_imports contains a segment-verified import for def_file_path / owner_t / callee_name."""
+    if not file_imports:
+        return False
+    norm_def = def_file_path.replace("\\", "/")
+    if norm_def.endswith(".py"):
+        norm_def = norm_def[:-3]
+    for prefix in ("src/", "lib/"):
+        if norm_def.startswith(prefix):
+            norm_def = norm_def[len(prefix) :]
+            break
+    def_parts = [p for p in norm_def.split("/") if p]
+    if def_parts and def_parts[-1] == "__init__":
+        def_parts.pop()
+    def_stem = def_parts[-1] if def_parts else Path(def_file_path).stem
+    def_parent = def_parts[-2] if len(def_parts) >= 2 else None
+    pkg_root = def_parts[0] if len(def_parts) >= 2 else None
+
+    def _imp_segs(val: str) -> list[str]:
+        return [s for s in val.split(".") if s]
+
+    def _module_matches(segs: list[str]) -> bool:
+        if not def_stem or def_stem not in segs:
+            return False
+        idx = segs.index(def_stem)
+        if def_parent and idx > 0 and segs[idx - 1] != def_parent:
+            return False
+        return True
+
+    if callee_name and callee_name in file_imports:
+        c_segs = _imp_segs(file_imports[callee_name])
+        if _module_matches(c_segs) or (pkg_root and c_segs and c_segs[0] == pkg_root and callee_name in c_segs):
+            return True
+
+    if owner_t and owner_t in file_imports:
+        o_segs = _imp_segs(file_imports[owner_t])
+        if _module_matches(o_segs) or (pkg_root and o_segs and o_segs[0] == pkg_root and owner_t in o_segs):
+            return True
+
+    for imp_val in file_imports.values():
+        if _module_matches(_imp_segs(imp_val)):
+            return True
+    return False
+
+
 def _scan_callers_and_tests_and_docs(
     extraction: RawRangeExtraction,
     symbol_changes: list[SymbolSignatureChange],
     modified_symbol_names: set[str],
     new_py_symbols_by_qname: dict[str, _PySymbolInfo] | None = None,
+    symbol_owners: dict[tuple[str, str], str] | None = None,
+    symbol_arity_bounds: dict[tuple[str, str], tuple[int, int, bool]] | None = None,
 ) -> tuple[
-    dict[str, list[CallerImpactItem]],
+    dict[tuple[str, str], list[CallerImpactItem]],
+    dict[tuple[str, str], int],
     list[str],
     list[DocDriftItem],
     list[UnresolvedDynamicCallItem],
@@ -1663,26 +2142,31 @@ def _scan_callers_and_tests_and_docs(
     target_sha = extraction.resolved_target_sha
     all_files = _list_repo_files_at_target(repo_path, target_sha)
     new_py_map = new_py_symbols_by_qname or {}
+    owner_lookup = symbol_owners or {}
+    arity_lookup = symbol_arity_bounds or {}
 
     breaking_short_names: dict[str, str] = {}
-    breaking_qnames_by_short: dict[str, list[str]] = {}
-    breaking_by_qname: dict[str, SymbolSignatureChange] = {}
+    breaking_keys_by_short: dict[str, list[tuple[str, str]]] = {}
+    breaking_by_key: dict[tuple[str, str], SymbolSignatureChange] = {}
     sev_rank = {"high": 3, "medium": 2, "low": 1}
     for sc in symbol_changes:
         if sc.is_breaking_candidate:
-            short = sc.symbol_name.split(".")[-1]
-            key = short if short not in ("__init__", "__call__") else sc.symbol_name.split(".")[0]
+            base_sym = sc.symbol_name.split("#", 1)[0]
+            short = base_sym.split("::")[-1].split(".")[-1]
+            key = short if short not in ("__init__", "__call__") else base_sym.split(".")[0]
+            comp_key = (sc.file_path, sc.symbol_name)
             breaking_short_names[key] = sc.symbol_name
-            qlist = breaking_qnames_by_short.setdefault(key, [])
-            if sc.symbol_name not in qlist:
-                qlist.append(sc.symbol_name)
-            existing = breaking_by_qname.get(sc.symbol_name)
+            klist = breaking_keys_by_short.setdefault(key, [])
+            if comp_key not in klist:
+                klist.append(comp_key)
+            existing = breaking_by_key.get(comp_key)
             if existing is None or sev_rank.get(sc.severity, 0) > sev_rank.get(existing.severity, 0):
-                breaking_by_qname[sc.symbol_name] = sc
+                breaking_by_key[comp_key] = sc
 
-    caller_impacts: dict[str, list[CallerImpactItem]] = {
-        sc.symbol_name: [] for sc in symbol_changes if sc.is_breaking_candidate
+    caller_impacts: dict[tuple[str, str], list[CallerImpactItem]] = {
+        comp_key: [] for comp_key in breaking_by_key
     }
+    caller_totals: dict[tuple[str, str], int] = {comp_key: 0 for comp_key in breaking_by_key}
     tested_symbols: set[str] = set()
     doc_drift_items: list[DocDriftItem] = []
     unresolved_dynamic_calls: list[UnresolvedDynamicCallItem] = []
@@ -1693,17 +2177,20 @@ def _scan_callers_and_tests_and_docs(
     files_parsed_ok = 0
     files_skipped_or_err = 0
 
-    eligible_scan_files = [
-        f for f in all_files if f.endswith((*SUPPORTED_ALL_CODE_EXTS, ".md", ".rst"))
+    eligible_code_files = [
+        f for f in all_files if f.endswith(SUPPORTED_ALL_CODE_EXTS) and not _is_lockfile_or_generated(f)
     ]
-    max_scan_files = 1000
+    eligible_doc_files = [
+        f for f in all_files if f.endswith((".md", ".rst")) and not _is_lockfile_or_generated(f)
+    ]
 
     # Pre-compile combined regexes once outside the file loop to avoid O(files * symbols * lines) blowup (BUG-033)
     mod_short_to_qnames: dict[str, list[str]] = {}
     for sym_qname in modified_symbol_names:
-        short_n = sym_qname.split("::")[-1].split(".")[-1]
+        base_q = sym_qname.split("#", 1)[0]
+        short_n = base_q.split("::")[-1].split(".")[-1]
         if short_n in ("__init__", "__call__"):
-            short_n = sym_qname.split(".")[0]
+            short_n = base_q.split(".")[0]
         if short_n:
             mod_short_to_qnames.setdefault(short_n, []).append(sym_qname)
 
@@ -1713,21 +2200,73 @@ def _scan_callers_and_tests_and_docs(
         else None
     )
     _breaking_call_re = (
-        re.compile(rf"\b({'|'.join(re.escape(k) for k in breaking_qnames_by_short)})\s*\(")
-        if breaking_qnames_by_short
+        re.compile(rf"\b({'|'.join(re.escape(k) for k in breaking_keys_by_short)})\s*\(")
+        if breaking_keys_by_short
         else None
     )
     _breaking_ident_re = (
-        re.compile(rf"\b({'|'.join(re.escape(k) for k in breaking_qnames_by_short)})\b")
-        if breaking_qnames_by_short
+        re.compile(rf"\b({'|'.join(re.escape(k) for k in breaking_keys_by_short)})\b")
+        if breaking_keys_by_short
         else None
     )
     _doc_call_res = {
         k: re.compile(rf"\b{re.escape(k)}\s*\(")
-        for k in breaking_qnames_by_short
+        for k in breaking_keys_by_short
     }
 
-    scan_paths = eligible_scan_files[:max_scan_files]
+    full_repo_prefilter_used = False
+    files_omitted_count = 0
+    truncated = False
+    verified_clean_code = 0
+
+    all_eligible = eligible_code_files + eligible_doc_files
+    if len(eligible_code_files) > 400:
+        search_terms = sorted(set(mod_short_to_qnames.keys()) | set(breaking_keys_by_short.keys()))
+        dyn_regexes = [_PY_DYN_GREP_REGEX, _TS_DYN_GREP_REGEX] if (symbol_changes or modified_symbol_names) else []
+        prefilter_matches = git_grep_matching_files(
+            repo_path,
+            target_sha,
+            search_terms,
+            regex_patterns=dyn_regexes,
+        )
+        if prefilter_matches is not None:
+            full_repo_prefilter_used = True
+            changed_paths = {f.file_path for f in extraction.changed_files}
+            candidate_set = prefilter_matches | changed_paths
+            candidate_code = [f for f in eligible_code_files if f in candidate_set]
+            candidate_docs = [f for f in eligible_doc_files if f in candidate_set]
+            verified_clean_code = len(eligible_code_files) - len(candidate_code)
+            scan_pool = candidate_code + candidate_docs
+            max_candidates = 4000
+            if len(scan_pool) > max_candidates:
+                files_omitted_count = sum(
+                    1 for f in scan_pool[max_candidates:] if f.endswith(SUPPORTED_ALL_CODE_EXTS)
+                )
+                truncated = True
+                scan_paths = scan_pool[:max_candidates]
+            else:
+                scan_paths = scan_pool
+        else:
+            max_fallback = 2500
+            if len(all_eligible) > max_fallback:
+                files_omitted_count = sum(
+                    1 for f in all_eligible[max_fallback:] if f.endswith(SUPPORTED_ALL_CODE_EXTS)
+                )
+                truncated = True
+                scan_paths = all_eligible[:max_fallback]
+            else:
+                scan_paths = all_eligible
+    else:
+        max_small = 4000
+        if len(all_eligible) > max_small:
+            files_omitted_count = sum(
+                1 for f in all_eligible[max_small:] if f.endswith(SUPPORTED_ALL_CODE_EXTS)
+            )
+            truncated = True
+            scan_paths = all_eligible[:max_small]
+        else:
+            scan_paths = all_eligible
+
     batch_target_blobs: dict[str, str] = {}
     if target_sha != "WORKING_TREE":
         missing_paths = [p for p in scan_paths if p not in extraction.target_blobs]
@@ -1739,6 +2278,18 @@ def _scan_callers_and_tests_and_docs(
                 max_bytes=256 * 1024,
             )
 
+    breaking_short_set = set(breaking_keys_by_short.keys())
+
+    def _resolve_owner(sc_item: SymbolSignatureChange) -> str | None:
+        explicit = owner_lookup.get((sc_item.file_path, sc_item.symbol_name))
+        if explicit:
+            return explicit
+        if "::" in sc_item.symbol_name:
+            return sc_item.symbol_name.rsplit("::", 1)[0].split("::")[-1]
+        if "." in sc_item.symbol_name:
+            return sc_item.symbol_name.split(".", 1)[0]
+        return None
+
     for rel_path in scan_paths:
         is_py = rel_path.endswith(".py")
         is_ts = rel_path.endswith(SUPPORTED_NON_PY_CODE_EXTS)
@@ -1747,8 +2298,6 @@ def _scan_callers_and_tests_and_docs(
         if is_py or is_ts:
             total_code_eligible += 1
 
-        # A committed target is immutable: callers, tests, and docs must come from
-        # that exact tree even when the checkout has newer or dirty files.
         content = extraction.target_blobs.get(rel_path)
         if content is None:
             if target_sha == "WORKING_TREE":
@@ -1756,7 +2305,7 @@ def _scan_callers_and_tests_and_docs(
                 if candidate.exists() and candidate.is_file() and is_safe_repo_file(repo_path, candidate):
                     try:
                         if candidate.stat().st_size <= 256 * 1024:
-                            content = candidate.read_text(encoding="utf-8", errors="replace")
+                            content = decode_bytes_safely(candidate.read_bytes())
                     except OSError:
                         content = None
             else:
@@ -1780,7 +2329,6 @@ def _scan_callers_and_tests_and_docs(
                 lines = content.splitlines()
                 line_map = _build_line_to_enclosing_symbol(tree)
 
-                # Scan for dynamic dispatch / reflection calls in non-test files
                 if not is_test and len(unresolved_dynamic_calls) < 25 and _PY_DYN_PRE_RE.search(content):
                     dyn_found = _detect_py_dynamic_calls(
                         tree, lines, rel_path, line_map, breaking_short_names
@@ -1801,52 +2349,96 @@ def _scan_callers_and_tests_and_docs(
                                 is_attr_call = True
                                 if isinstance(node.func.value, ast.Name):
                                     attr_receiver = node.func.value.id
+                                elif isinstance(node.func.value, ast.Attribute):
+                                    attr_receiver = node.func.value.attr
                             target_short_name: str | None = None
-                            if callee_name and callee_name in breaking_qnames_by_short:
+                            if callee_name and callee_name in breaking_keys_by_short:
                                 target_short_name = callee_name
                             elif callee_name and callee_name in file_imports:
                                 imported_target = file_imports[callee_name].split(".")[-1]
-                                if imported_target in breaking_qnames_by_short:
+                                if imported_target in breaking_keys_by_short:
                                     target_short_name = imported_target
 
                             if target_short_name:
-                                candidate_qnames = breaking_qnames_by_short[target_short_name]
+                                candidate_keys = breaking_keys_by_short[target_short_name]
                                 lineno = getattr(node, "lineno", 1)
                                 enclosing = line_map.get(lineno)
 
-                                # Narrow candidate_qnames if call is a self/cls call inside a specific class
-                                matched_qnames = candidate_qnames
-                                if len(candidate_qnames) > 1 and enclosing and "." in enclosing:
+                                matched_keys = candidate_keys
+                                if len(candidate_keys) > 1 and enclosing and "." in enclosing:
                                     enc_cls = enclosing.split(".")[0]
                                     if attr_receiver in ("self", "cls", enc_cls):
-                                        cls_specific = [q for q in candidate_qnames if q.startswith(f"{enc_cls}.")]
+                                        cls_specific = [ck for ck in candidate_keys if ck[1].startswith(f"{enc_cls}.")]
                                         if cls_specific:
-                                            matched_qnames = cls_specific
+                                            matched_keys = cls_specific
 
-                                for qname in matched_qnames:
-                                    sc_obj = breaking_by_qname[qname]
-                                    # Note (BUG-021): Do NOT skip calls inside `start_line..end_line` of `sc_obj`,
-                                    # because recursive self-calls inside the function body are genuine call sites
-                                    # that can break when the function's own signature changes!
-                                    snippet = lines[lineno - 1].strip() if 1 <= lineno <= len(lines) else (callee_name or target_short_name)
+                                for comp_key in matched_keys:
+                                    _, qname = comp_key
+                                    sc_obj = breaking_by_key[comp_key]
+                                    # Enforce same language family
+                                    if get_language_family(sc_obj.file_path) not in ("", "python"):
+                                        continue
+
                                     def_mod_stem = Path(sc_obj.file_path).stem
-                                    has_explicit_import = (callee_name in file_imports) or any(
-                                        def_mod_stem in v for v in file_imports.values()
+                                    owner_t = _resolve_owner(sc_obj)
+
+                                    # Reject bare calls like `copy(x)` against class methods like `OpenAI.copy`
+                                    if (
+                                        not is_attr_call
+                                        and owner_t is not None
+                                        and sc_obj.symbol_kind != "class"
+                                        and target_short_name != owner_t
+                                        and not qname.endswith(".__init__")
+                                    ):
+                                        continue
+
+                                    # Reject method calls like `provider.list_models()` against top-level functions
+                                    if (
+                                        is_attr_call
+                                        and owner_t is None
+                                        and sc_obj.symbol_kind in ("function", "async_function")
+                                        and attr_receiver
+                                        and attr_receiver != def_mod_stem
+                                        and attr_receiver not in file_imports
+                                    ):
+                                        continue
+
+                                    has_explicit_import = _python_import_matches_def(
+                                        file_imports, callee_name, sc_obj.file_path, owner_t
                                     )
-                                    if rel_path == sc_obj.file_path or (has_explicit_import and not is_attr_call):
-                                        conf_level = "exact_ast"
-                                    elif has_explicit_import and is_attr_call:
+
+                                    is_self_cls_same_class = (
+                                        rel_path == sc_obj.file_path
+                                        and enclosing is not None
+                                        and "." in enclosing
+                                        and owner_t == enclosing.split(".")[0]
+                                    )
+                                    if is_attr_call and attr_receiver and owner_t and not _receiver_matches_owner(attr_receiver, owner_t):
+                                        continue
+
+                                    # Guard generic/builtin names (`list`, `main`, `run`, etc.) against bogus cross-file matches
+                                    short_key = target_short_name
+                                    if short_key in _GENERIC_CALLER_NAMES and not (
+                                        rel_path == sc_obj.file_path
+                                        or has_explicit_import
+                                        or is_self_cls_same_class
+                                    ):
+                                        continue
+
+                                    if rel_path == sc_obj.file_path or has_explicit_import:
                                         conf_level = "exact_ast"
                                     else:
                                         conf_level = "heuristic_name_match"
 
+                                    snippet = lines[lineno - 1].strip() if 1 <= lineno <= len(lines) else (callee_name or target_short_name)
                                     arity_broken, mismatch_msg = _check_call_arity_mismatch(
                                         node,
                                         new_py_map.get(qname),
                                         sc_obj.change_kind,
                                     )
-                                    if len(caller_impacts.get(qname, [])) < 10:
-                                        caller_impacts.setdefault(qname, []).append(
+                                    caller_totals[comp_key] = caller_totals.get(comp_key, 0) + 1
+                                    if len(caller_impacts.get(comp_key, [])) < 25:
+                                        caller_impacts.setdefault(comp_key, []).append(
                                             CallerImpactItem(
                                                 caller_file=rel_path,
                                                 caller_symbol=callee_name or target_short_name,
@@ -1864,6 +2456,8 @@ def _scan_callers_and_tests_and_docs(
         elif is_ts:
             files_parsed_ok += 1
             lines = content.splitlines()
+            caller_family = get_language_family(rel_path)
+
             if not is_test and len(unresolved_dynamic_calls) < 25:
                 for idx, line in enumerate(lines, start=1):
                     if _TS_DYNAMIC_DISPATCH_RE.search(line):
@@ -1884,39 +2478,73 @@ def _scan_callers_and_tests_and_docs(
                         if len(unresolved_dynamic_calls) >= 25:
                             break
 
-            if _breaking_call_re is not None and _breaking_call_re.search(content):
-                for idx, line in enumerate(lines, start=1):
-                    for m_call in _breaking_call_re.finditer(line):
-                        short_n = m_call.group(1)
-                        for qname in breaking_qnames_by_short.get(short_n, ()):
-                            sc_obj = breaking_by_qname[qname]
-                            if (
-                                rel_path == sc_obj.file_path
-                                and sc_obj.target_line_span
-                                and sc_obj.target_line_span.start_line == idx
-                            ):
-                                continue
-                            if len(caller_impacts.get(qname, [])) < 10:
-                                caller_impacts.setdefault(qname, []).append(
-                                    CallerImpactItem(
-                                        caller_file=rel_path,
-                                        caller_symbol=short_n,
-                                        line_number=idx,
-                                        call_snippet=line.strip()[:160],
-                                        resolution_confidence="heuristic_name_match",
-                                    )
-                                )
+            if breaking_short_set and _breaking_call_re is not None and _breaking_call_re.search(content):
+                ts_calls = extract_multilang_calls_treesitter(content, rel_path, breaking_short_set)
+                used_ts_calls = ts_calls is not None
+                call_sites = (
+                    ts_calls
+                    if ts_calls is not None
+                    else _extract_multilang_calls_fallback(content, rel_path, breaking_short_set, _breaking_call_re)
+                )
 
-        elif is_md and breaking_qnames_by_short:
-            lines: list[str] | None = None
-            for short_n, qnames in breaking_qnames_by_short.items():
+                for csite in call_sites:
+                    short_n = csite.callee_name
+                    for comp_key in breaking_keys_by_short.get(short_n, ()):
+                        _, qname = comp_key
+                        sc_obj = breaking_by_key[comp_key]
+                        def_family = get_language_family(sc_obj.file_path)
+                        if def_family and caller_family and def_family != caller_family:
+                            continue
+                        # Never count the symbol's own declaration line as a caller
+                        if (
+                            rel_path == sc_obj.file_path
+                            and sc_obj.target_line_span
+                            and sc_obj.target_line_span.start_line == csite.line_number
+                        ):
+                            continue
+                        owner_t = _resolve_owner(sc_obj)
+                        if not _receiver_matches_owner(csite.receiver, owner_t):
+                            continue
+                        if "#" in sc_obj.symbol_name and csite.arg_count is not None:
+                            bounds = arity_lookup.get(comp_key)
+                            if bounds is not None:
+                                min_req, max_params, is_variadic = bounds
+                                if not is_variadic and not (min_req <= csite.arg_count <= max_params):
+                                    continue
+                        has_scope = _has_multilang_scope_affinity(content, rel_path, sc_obj.file_path, owner_t)
+                        if short_n in _GENERIC_CALLER_NAMES and not (
+                            rel_path == sc_obj.file_path
+                            or has_scope
+                            or (csite.receiver and owner_t and csite.receiver.lower() in owner_t.lower())
+                        ):
+                            continue
+
+                        conf = (
+                            "exact_ast" if (used_ts_calls and (rel_path == sc_obj.file_path or has_scope)) else "heuristic_name_match"
+                        )
+                        caller_totals[comp_key] = caller_totals.get(comp_key, 0) + 1
+                        if len(caller_impacts.get(comp_key, [])) < 25:
+                            caller_impacts.setdefault(comp_key, []).append(
+                                CallerImpactItem(
+                                    caller_file=rel_path,
+                                    caller_symbol=short_n,
+                                    line_number=csite.line_number,
+                                    call_snippet=csite.call_snippet,
+                                    resolution_confidence=conf,
+                                )
+                            )
+
+        elif is_md and breaking_keys_by_short:
+            lines = None
+            for short_n, comp_keys in breaking_keys_by_short.items():
                 if short_n not in content:
                     continue
                 if lines is None:
                     lines = content.splitlines()
                 call_pat = _doc_call_res[short_n]
-                for qname in qnames:
-                    sc_obj = breaking_by_qname[qname]
+                for comp_key in comp_keys:
+                    _, qname = comp_key
+                    sc_obj = breaking_by_key[comp_key]
                     target_py_sym = new_py_map.get(qname)
                     min_req_args = (
                         sum(
@@ -1942,10 +2570,6 @@ def _scan_callers_and_tests_and_docs(
                             and call_arg_cnt < min_req_args
                         )
 
-                        # Flag if:
-                        # 1. Symbol was completely removed, OR
-                        # 2. Call in Markdown explicitly passes fewer arguments than the new required signature (even if doc file was edited elsewhere!), OR
-                        # 3. Doc file was not modified in the commit range while symbol signature broke
                         if sc_obj.change_kind == "removed" or arity_stale or (rel_path not in changed_doc_paths):
                             ev_id = sc_obj.evidence_ids[0] if sc_obj.evidence_ids else None
                             arity_note = (
@@ -1968,15 +2592,9 @@ def _scan_callers_and_tests_and_docs(
                             )
                             break
 
-    # Account for code files beyond the max_scan_files cap if repo is huge
-    if len(eligible_scan_files) > max_scan_files:
-        extra_code = sum(
-            1
-            for f in eligible_scan_files[max_scan_files:]
-            if f.endswith(SUPPORTED_ALL_CODE_EXTS)
-        )
-        total_code_eligible += extra_code
-        files_skipped_or_err += extra_code
+    total_code_eligible += verified_clean_code + files_omitted_count
+    files_parsed_ok += verified_clean_code
+    files_skipped_or_err += files_omitted_count
 
     coverage_pct = (
         round((files_parsed_ok / total_code_eligible) * 100.0, 1)
@@ -1995,14 +2613,16 @@ def _scan_callers_and_tests_and_docs(
 
     reasons: list[str] = []
     conf_rating: ConfidenceLevel = "high"
-    if coverage_pct < 75.0:
+    if coverage_pct < 75.0 or truncated:
         conf_rating = "low"
         reasons.append(
-            f"Only {coverage_pct}% ({files_parsed_ok}/{total_code_eligible}) of eligible code files were statically parsed."
+            f"Parsed {coverage_pct}% ({files_parsed_ok}/{total_code_eligible}) of eligible code files"
+            + (f" ({files_omitted_count} files omitted by scan cap)." if files_omitted_count else ".")
         )
     else:
         reasons.append(
-            f"Statically parsed {coverage_pct}% ({files_parsed_ok}/{total_code_eligible}) of eligible repository source files."
+            f"Statically verified {coverage_pct}% ({files_parsed_ok}/{total_code_eligible}) of eligible repository source files"
+            + (" via full-repo prefilter + AST scan." if full_repo_prefilter_used else ".")
         )
 
     if dyn_cnt > 0:
@@ -2026,6 +2646,11 @@ def _scan_callers_and_tests_and_docs(
     if conf_rating == "high":
         reasons.append("Zero unresolved dynamic calls and zero unverified external public API breakages detected.")
 
+    ts_status = get_treesitter_status()
+    parser_backend_label = (
+        "python_ast+tree_sitter" if ts_status.get("available") else "python_ast+structural_fallback"
+    )
+
     coverage_report = AnalysisCoverageReport(
         total_repo_files_discovered=len(all_files),
         total_code_files_eligible=total_code_eligible,
@@ -2037,12 +2662,16 @@ def _scan_callers_and_tests_and_docs(
         callers_with_arity_mismatch_count=arity_cnt,
         unresolved_dynamic_calls_count=dyn_cnt,
         public_api_exports_modified_count=pub_brk_cnt,
+        parser_backend=parser_backend_label,
+        files_omitted_count=files_omitted_count,
+        truncated=truncated,
+        full_repo_prefilter_used=full_repo_prefilter_used,
         overall_blast_radius_confidence=conf_rating,
         confidence_rationale=" ".join(reasons),
     )
 
     untested = sorted(modified_symbol_names - tested_symbols)
-    return caller_impacts, untested, doc_drift_items, unresolved_dynamic_calls, coverage_report
+    return caller_impacts, caller_totals, untested, doc_drift_items, unresolved_dynamic_calls, coverage_report
 
 
 def _collect_init_reexports(extraction: RawRangeExtraction) -> set[str]:
@@ -2187,6 +2816,272 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
         )
         return eid
 
+_VIS_RANK = {"private": 0, "internal": 1, "protected": 2, "public": 3}
+
+
+def _semantic_compare_multilang_symbol(
+    family: str,
+    old_sym: ParsedMultiLangSymbol,
+    new_sym: ParsedMultiLangSymbol,
+    old_rec_errors: list[str],
+    rec_errors: list[str],
+) -> tuple[bool, bool, str, str] | None:
+    """Compare two multi-language declarations semantically.
+
+    Returns ``(has_meaningful_delta, is_breaking_candidate, severity, note_suffix)``
+    or ``None`` when changes are purely cosmetic (whitespace, modifier reordering,
+    or parameter-name-only renames in positional languages).
+    """
+    newly_introduced_rec_error = bool(rec_errors and not old_rec_errors)
+    vis_narrowed = _VIS_RANK.get(new_sym.visibility, 1) < _VIS_RANK.get(old_sym.visibility, 1)
+    vis_widened = _VIS_RANK.get(new_sym.visibility, 1) > _VIS_RANK.get(old_sym.visibility, 1)
+    async_changed = ("async" in old_sym.modifiers) != ("async" in new_sym.modifiers)
+    static_changed = ("static" in old_sym.modifiers) != ("static" in new_sym.modifiers)
+
+    old_ret_norm = normalize_type_expr(old_sym.return_type or "")
+    new_ret_norm = normalize_type_expr(new_sym.return_type or "")
+    ret_changed = old_sym.return_type is not None and old_ret_norm != new_ret_norm
+
+    same_param_count = len(old_sym.params) == len(new_sym.params)
+    same_req_count = old_sym.required_param_count == new_sym.required_param_count
+    same_param_types = old_sym.normalized_param_types == new_sym.normalized_param_types
+
+    is_positional_rename_only = (
+        family in _POSITIONAL_ONLY_FAMILIES
+        and same_param_count
+        and same_req_count
+        and same_param_types
+    )
+    param_types_incompatible = False if family == "ruby" else (not same_param_types)
+    if (
+        param_types_incompatible
+        and len(new_sym.params) > len(old_sym.params)
+        and new_sym.required_param_count <= old_sym.required_param_count
+    ):
+        if (
+            new_sym.normalized_param_types[: len(old_sym.normalized_param_types)]
+            == old_sym.normalized_param_types
+        ):
+            param_types_incompatible = False
+
+    param_breaking = (
+        new_sym.required_param_count > old_sym.required_param_count
+        or len(new_sym.params) < len(old_sym.params)
+        or (not is_positional_rename_only and param_types_incompatible)
+    )
+    param_optional_added = len(new_sym.params) > len(old_sym.params) and not param_breaking
+
+    has_meaningful_delta = (
+        newly_introduced_rec_error
+        or vis_narrowed
+        or vis_widened
+        or async_changed
+        or static_changed
+        or ret_changed
+        or param_breaking
+        or param_optional_added
+    )
+    if not has_meaningful_delta:
+        return None
+
+    is_brk = (
+        bool(rec_errors)
+        or vis_narrowed
+        or async_changed
+        or static_changed
+        or ret_changed
+        or param_breaking
+    )
+    notes: list[str] = []
+    if vis_narrowed:
+        notes.append(f"Visibility narrowed ({old_sym.visibility} -> {new_sym.visibility}).")
+    if rec_errors:
+        notes.append(f"Recursive self-call bug: {rec_errors[0]}")
+    sev = "high" if is_brk else "low"
+    return True, is_brk, sev, (" " + " ".join(notes)) if notes else ""
+
+
+def _is_ml_variadic(sym: ParsedMultiLangSymbol) -> bool:
+    """Return True if a multi-language symbol accepts variadic arguments."""
+    return any(
+        "..." in p or p.lstrip().startswith("*") or "params " in p or "vararg " in p
+        for p in sym.params
+    )
+
+
+def _pair_multilang_overloads(
+    lang_family: str,
+    old_ts: dict[str, ParsedMultiLangSymbol],
+    new_ts: dict[str, ParsedMultiLangSymbol],
+) -> tuple[
+    list[tuple[str, ParsedMultiLangSymbol, ParsedMultiLangSymbol]],
+    list[tuple[str, ParsedMultiLangSymbol]],
+    list[tuple[str, ParsedMultiLangSymbol]],
+]:
+    """Match multi-language overloads order-independently across old/new versions."""
+    old_groups: dict[str, list[tuple[str, ParsedMultiLangSymbol]]] = {}
+    for k, s in old_ts.items():
+        old_groups.setdefault(k.split("#", 1)[0], []).append((k, s))
+
+    new_groups: dict[str, list[tuple[str, ParsedMultiLangSymbol]]] = {}
+    for k, s in new_ts.items():
+        new_groups.setdefault(k.split("#", 1)[0], []).append((k, s))
+
+    paired: list[tuple[str, ParsedMultiLangSymbol, ParsedMultiLangSymbol]] = []
+    removed: list[tuple[str, ParsedMultiLangSymbol]] = []
+    added: list[tuple[str, ParsedMultiLangSymbol]] = []
+
+    for base in sorted(set(old_groups) | set(new_groups)):
+        og = old_groups.get(base, [])
+        ng = new_groups.get(base, [])
+        if not ng:
+            removed.extend(og)
+            continue
+        if not og:
+            added.extend(ng)
+            continue
+        if len(og) == 1 and len(ng) == 1:
+            paired.append((ng[0][0], og[0][1], ng[0][1]))
+            continue
+
+        used_old: set[int] = set()
+        used_new: set[int] = set()
+
+        def _is_exact(o_sym: ParsedMultiLangSymbol, n_sym: ParsedMultiLangSymbol) -> bool:
+            if o_sym.symbol_kind != n_sym.symbol_kind:
+                return False
+            if (
+                o_sym.normalized_param_types == n_sym.normalized_param_types
+                and o_sym.return_type == n_sym.return_type
+                and o_sym.visibility == n_sym.visibility
+                and o_sym.required_param_count == n_sym.required_param_count
+            ):
+                return True
+            return _semantic_compare_multilang_symbol(lang_family, o_sym, n_sym, [], []) is None
+
+        # Pass 1a: exact matches preserving identical dictionary keys first
+        for oi, (ok, osym) in enumerate(og):
+            for ni, (nk, nsym) in enumerate(ng):
+                if ni in used_new or ok != nk:
+                    continue
+                if _is_exact(osym, nsym):
+                    used_old.add(oi)
+                    used_new.add(ni)
+                    paired.append((nk, osym, nsym))
+                    break
+
+        # Pass 1b: exact matches across shifted `#N` overload positions
+        for oi, (_ok, osym) in enumerate(og):
+            if oi in used_old:
+                continue
+            for ni, (nk, nsym) in enumerate(ng):
+                if ni in used_new:
+                    continue
+                if _is_exact(osym, nsym):
+                    used_old.add(oi)
+                    used_new.add(ni)
+                    paired.append((nk, osym, nsym))
+                    break
+
+        # Pass 2: greedy similarity matching for modified overloads of same symbol_kind
+        rem_old_indices = [oi for oi in range(len(og)) if oi not in used_old]
+        rem_new_indices = [ni for ni in range(len(ng)) if ni not in used_new]
+        if rem_old_indices and rem_new_indices:
+            single_rem = len(rem_old_indices) == 1 and len(rem_new_indices) == 1
+            scored: list[tuple[int, int, int]] = []
+            for oi in rem_old_indices:
+                osym = og[oi][1]
+                for ni in rem_new_indices:
+                    nsym = ng[ni][1]
+                    if osym.symbol_kind != nsym.symbol_kind:
+                        continue
+                    shared_prefix = 0
+                    for a, b in zip(osym.normalized_param_types, nsym.normalized_param_types):
+                        if a == b:
+                            shared_prefix += 1
+                        else:
+                            break
+                    shared_total = sum(
+                        1 for a, b in zip(osym.normalized_param_types, nsym.normalized_param_types) if a == b
+                    )
+                    if not (len(osym.params) == len(nsym.params) or shared_prefix > 0 or single_rem):
+                        continue
+                    score = (
+                        10 if len(osym.params) == len(nsym.params) else -abs(len(osym.params) - len(nsym.params))
+                    ) + 2 * shared_total
+                    scored.append((score, oi, ni))
+            scored.sort(key=lambda item: (-item[0], item[1], item[2]))
+            for _score, oi, ni in scored:
+                if oi in used_old or ni in used_new:
+                    continue
+                used_old.add(oi)
+                used_new.add(ni)
+                paired.append((ng[ni][0], og[oi][1], ng[ni][1]))
+
+        # Pass 3: genuinely removed / added overloads
+        for oi, item in enumerate(og):
+            if oi not in used_old:
+                removed.append(item)
+        for ni, item in enumerate(ng):
+            if ni not in used_new:
+                added.append(item)
+
+    return paired, removed, added
+
+
+def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAnalysisResult:
+    """Run deterministic Python AST and multi-language signature diffing, caller blast-radius scan, dynamic call scan, and doc-drift detection."""
+    symbol_changes: list[SymbolSignatureChange] = []
+    modified_symbol_names: set[str] = set()
+    new_py_symbols_by_qname: dict[str, _PySymbolInfo] = {}
+    symbol_owners: dict[tuple[str, str], str] = {}
+    symbol_arity_bounds: dict[tuple[str, str], tuple[int, int, bool]] = {}
+    init_reexports = _collect_init_reexports(extraction)
+
+    next_ev_num = len(extraction.evidence_registry) + 1
+    commit_by_file: dict[str, tuple[str, str]] = {}
+    for c in extraction.commits:
+        for cf in c.changed_files:
+            norm_cf = cf.replace("\\", "/")
+            if norm_cf not in commit_by_file:
+                commit_by_file[norm_cf] = (c.commit_hash, c.subject)
+
+    def _register_symbol_evidence(
+        file_delta_path: str,
+        base_span: LineSpan | None,
+        target_span: LineSpan | None,
+        excerpt: str,
+        reason: str,
+    ) -> str:
+        nonlocal next_ev_num
+        eid = f"ev_{next_ev_num:03d}"
+        next_ev_num += 1
+        norm_delta = file_delta_path.replace("\\", "/")
+        default_hash = (
+            extraction.commits[0].commit_hash
+            if extraction.resolved_target_sha == "WORKING_TREE" and extraction.commits
+            else extraction.resolved_target_sha
+        )
+        default_msg = (
+            extraction.commits[0].subject
+            if extraction.resolved_target_sha == "WORKING_TREE" and extraction.commits
+            else "Working tree or revision diff"
+        )
+        c_hash, c_msg = commit_by_file.get(norm_delta, (default_hash, default_msg))
+        extraction.evidence_registry[eid] = EvidenceRecord(
+            evidence_id=eid,
+            commit_hash=c_hash,
+            commit_message=c_msg,
+            file_path=file_delta_path,
+            base_line_span=base_span,
+            target_line_span=target_span,
+            diff_hunk_header=f"AST Symbol Diff ({file_delta_path})",
+            diff_excerpt=excerpt[:600],
+            reason_supports_finding=reason,
+            confidence="high",
+        )
+        return eid
+
     # Pre-collect target symbols across non-Python files to detect cross-header/module relocations (BUG-032)
     all_target_multilang_symbols: dict[str, set[str]] = {}
     for t_path, t_blob in extraction.target_blobs.items():
@@ -2206,6 +3101,12 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
         if fdelta.status == "modified" and (not base_src or not target_src):
             continue
 
+        # Skip pure CRLF / line-ending normalization diffs with identical normalized text
+        if fdelta.status == "modified" and base_src.replace("\r\n", "\n") == target_src.replace("\r\n", "\n"):
+            continue
+
+        lang_family = get_language_family(fpath)
+
         if fpath.endswith(".py"):
             old_syms = _parse_python_symbols(base_src, file_path=fpath, init_reexports=init_reexports) if base_src else {}
             new_syms = _parse_python_symbols(target_src, file_path=fpath, init_reexports=init_reexports) if target_src else {}
@@ -2213,6 +3114,8 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
 
             # 1. Removed symbols
             for qname, old_s in old_syms.items():
+                if "." in qname:
+                    symbol_owners[(fpath, qname)] = qname.split(".", 1)[0]
                 if qname not in new_syms:
                     b_span = LineSpan(start_line=old_s.start_line, end_line=old_s.end_line)
                     reason = f"Public {old_s.symbol_kind} '{qname}' was removed from {fpath}."
@@ -2233,6 +3136,8 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                         is_breaking_candidate=True,
                         is_public_api_export=old_s.is_public_export,
                         public_api_exposure_reason=old_s.export_reason,
+                        api_surface="public_external" if old_s.is_public_export else "internal_only",
+                        language_family="python",
                         severity="high",
                         details=reason,
                         base_line_span=b_span,
@@ -2245,6 +3150,8 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
 
             # 2. Added symbols
             for qname, new_s in new_syms.items():
+                if "." in qname:
+                    symbol_owners[(fpath, qname)] = qname.split(".", 1)[0]
                 if qname not in old_syms:
                     t_span = LineSpan(start_line=new_s.start_line, end_line=new_s.end_line)
                     reason = f"Public {new_s.symbol_kind} '{qname}' was added in {fpath}."
@@ -2265,6 +3172,8 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                         is_breaking_candidate=False,
                         is_public_api_export=new_s.is_public_export,
                         public_api_exposure_reason=new_s.export_reason,
+                        api_surface="public_external" if new_s.is_public_export else "internal_only",
+                        language_family="python",
                         severity="low",
                         details=reason,
                         base_line_span=None,
@@ -2293,6 +3202,8 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                             is_breaking_candidate=rec_brk,
                             is_public_api_export=new_s.is_public_export,
                             public_api_exposure_reason=new_s.export_reason,
+                            api_surface="public_external" if new_s.is_public_export else "internal_only",
+                            language_family="python",
                             severity=rec_sev,  # type: ignore[arg-type]
                             details=rec_details,
                             base_line_span=None,
@@ -2306,7 +3217,8 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
             for qname in old_syms.keys() & new_syms.keys():
                 old_s = old_syms[qname]
                 new_s = new_syms[qname]
-                # Track body-only mutations so untested_modified_symbols catches implementation changes without signature changes (BUG-018)
+                if "." in qname:
+                    symbol_owners[(fpath, qname)] = qname.split(".", 1)[0]
                 if old_s.body_ast_dump != new_s.body_ast_dump:
                     modified_symbol_names.add(qname)
                 diffs = _compare_python_symbol(fpath, old_s, new_s)
@@ -2335,6 +3247,8 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                         is_breaking_candidate=is_brk,
                         is_public_api_export=is_pub_exp,
                         public_api_exposure_reason=pub_exp_reason,
+                        api_surface="public_external" if is_pub_exp else "internal_only",
+                        language_family="python",
                         severity=sev,  # type: ignore[arg-type]
                         details=details,
                         base_line_span=b_span,
@@ -2346,8 +3260,8 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                     modified_symbol_names.add(qname)
 
         elif fpath.endswith(SUPPORTED_NON_PY_CODE_EXTS):
-            old_ts = _parse_multilang_symbols(base_src, fpath) if base_src else {}
-            new_ts = _parse_multilang_symbols(target_src, fpath) if target_src else {}
+            old_ts = _parse_multilang_symbols_rich(base_src, fpath) if base_src else {}
+            new_ts = _parse_multilang_symbols_rich(target_src, fpath) if target_src else {}
             old_rec_info = detect_multilang_recursive_functions(base_src, fpath) if base_src else {}
             rec_info = detect_multilang_recursive_functions(target_src, fpath) if target_src else {}
             has_forwarding_include = bool(
@@ -2358,99 +3272,108 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                     or "export {" in target_src
                 )
             )
-            ts_export_reason = (
-                f"Exported from package entrypoint `{fpath}`"
-                if Path(fpath).stem in ("index", "mod", "lib")
-                else f"Public/exported declaration in `{fpath}`"
-            )
-            # 1. Removed & Modified symbols
-            for name, (kind, old_line, old_sig, old_params, old_ret) in old_ts.items():
-                if name not in new_ts:
-                    b_span = LineSpan(start_line=old_line, end_line=old_line)
-                    relocated_to = sorted(all_target_multilang_symbols.get(name, set()) - {fpath})
-                    is_relocated_forwarded = bool(relocated_to and has_forwarding_include)
+            is_compiled = lang_family in _COMPILED_LANGUAGE_FAMILIES
+            paired_ml, removed_ml, added_ml = _pair_multilang_overloads(lang_family, old_ts, new_ts)
+
+            # 1. Removed symbols
+            for name, old_sym in removed_ml:
+                if old_sym.owner_type:
+                    symbol_owners[(fpath, name)] = old_sym.owner_type
+                symbol_arity_bounds[(fpath, name)] = (
+                    old_sym.required_param_count,
+                    len(old_sym.params),
+                    _is_ml_variadic(old_sym),
+                )
+                b_span = LineSpan(start_line=old_sym.start_line, end_line=old_sym.end_line)
+                base_lookup = name.split("#", 1)[0]
+                relocated_set = all_target_multilang_symbols.get(name, set()) | all_target_multilang_symbols.get(base_lookup, set())
+                relocated_to = sorted(relocated_set - {fpath})
+                is_relocated_forwarded = bool(relocated_to and has_forwarding_include)
+                is_pub_exp = old_sym.is_public_api
+                api_surf = "public_external" if is_pub_exp else "internal_only"
+                is_brk = (not is_relocated_forwarded) and (is_pub_exp or not is_compiled)
+                sev = "high" if is_brk else "low"
+                if is_relocated_forwarded:
+                    reason = f"Symbol {old_sym.symbol_kind} '{name}' was relocated from {fpath} to {relocated_to[0]} with header/module forwarding."
+                elif not is_pub_exp and is_compiled:
+                    reason = f"Internal/non-public {old_sym.symbol_kind} '{name}' was removed from {fpath} (compiled-language internal symbol)."
+                else:
+                    reason = f"Exported {old_sym.symbol_kind} '{name}' was removed from {fpath}."
+                eid = _register_symbol_evidence(fpath, b_span, None, f"- {old_sym.signature_str}", reason)
+                sc = SymbolSignatureChange(
+                    file_path=fpath,
+                    symbol_name=name,
+                    symbol_kind=old_sym.symbol_kind,  # type: ignore[arg-type]
+                    change_kind="removed",
+                    old_signature=old_sym.signature_str,
+                    new_signature=None,
+                    is_breaking_candidate=is_brk,
+                    is_public_api_export=is_pub_exp,
+                    public_api_exposure_reason=old_sym.export_reason,
+                    api_surface=api_surf,  # type: ignore[arg-type]
+                    language_family=lang_family,
+                    severity=sev,  # type: ignore[arg-type]
+                    details=reason,
+                    base_line_span=b_span,
+                    evidence_ids=[eid],
+                )
+                symbol_changes.append(sc)
+                fdelta.symbol_changes.append(sc)
+                modified_symbol_names.add(name)
+
+            # 2. Modified symbols (order-independent overload pairing)
+            for name, old_sym, new_sym in paired_ml:
+                owner_resolved = new_sym.owner_type or old_sym.owner_type
+                if owner_resolved:
+                    symbol_owners[(fpath, name)] = owner_resolved
+                symbol_arity_bounds[(fpath, name)] = (
+                    min(old_sym.required_param_count, new_sym.required_param_count),
+                    max(len(old_sym.params), len(new_sym.params)),
+                    _is_ml_variadic(old_sym) or _is_ml_variadic(new_sym),
+                )
+                _, old_rec_errors = old_rec_info.get(name, old_rec_info.get(old_sym.qualified_name, (False, [])))
+                _, rec_errors = rec_info.get(name, (False, []))
+                cmp_res = _semantic_compare_multilang_symbol(
+                    lang_family, old_sym, new_sym, old_rec_errors, rec_errors
+                )
+                if cmp_res is not None:
+                    _, raw_brk, raw_sev, extra_note = cmp_res
+                    is_pub_exp = old_sym.is_public_api or new_sym.is_public_api
+                    api_surf = "public_external" if is_pub_exp else "internal_only"
+                    has_rec_bug = bool(rec_errors and not old_rec_errors)
+                    # Suppress breaking noise for non-public compiled-language symbols unless recursive defect
+                    if is_compiled and not is_pub_exp and not has_rec_bug:
+                        is_brk = False
+                        sev = "low"
+                    else:
+                        is_brk = raw_brk
+                        sev = raw_sev
+
+                    b_span = LineSpan(start_line=old_sym.start_line, end_line=old_sym.end_line)
+                    t_span = LineSpan(start_line=new_sym.start_line, end_line=new_sym.end_line)
+                    vis_label = "Exported" if is_pub_exp else "Internal"
                     reason = (
-                        f"Symbol {kind} '{name}' was relocated from {fpath} to {relocated_to[0]} with header/module forwarding."
-                        if is_relocated_forwarded
-                        else f"Exported {kind} '{name}' was removed from {fpath}."
+                        f"{vis_label} {new_sym.symbol_kind} '{name}' signature changed from "
+                        f"'{old_sym.signature_str}' to '{new_sym.signature_str}'.{extra_note}"
+                    ).strip()
+                    eid = _register_symbol_evidence(
+                        fpath, b_span, t_span, f"- {old_sym.signature_str}\n+ {new_sym.signature_str}", reason
                     )
-                    eid = _register_symbol_evidence(fpath, b_span, None, f"- {old_sig}", reason)
                     sc = SymbolSignatureChange(
                         file_path=fpath,
                         symbol_name=name,
-                        symbol_kind=kind,  # type: ignore[arg-type]
-                        change_kind="removed",
-                        old_signature=old_sig,
-                        new_signature=None,
-                        is_breaking_candidate=not is_relocated_forwarded,
-                        is_public_api_export=True,
-                        public_api_exposure_reason=ts_export_reason,
-                        severity="low" if is_relocated_forwarded else "high",
+                        symbol_kind=new_sym.symbol_kind,  # type: ignore[arg-type]
+                        change_kind="signature_changed",
+                        old_signature=old_sym.signature_str,
+                        new_signature=new_sym.signature_str,
+                        is_breaking_candidate=is_brk,
+                        is_public_api_export=is_pub_exp,
+                        public_api_exposure_reason=new_sym.export_reason or old_sym.export_reason,
+                        api_surface=api_surf,  # type: ignore[arg-type]
+                        language_family=lang_family,
+                        severity=sev,  # type: ignore[arg-type]
                         details=reason,
                         base_line_span=b_span,
-                        evidence_ids=[eid],
-                    )
-                    symbol_changes.append(sc)
-                    fdelta.symbol_changes.append(sc)
-                    modified_symbol_names.add(name)
-                else:
-                    _, new_line, new_sig, new_params, new_ret = new_ts[name]
-                    _, old_rec_errors = old_rec_info.get(name, (False, []))
-                    _, rec_errors = rec_info.get(name, (False, []))
-                    newly_introduced_rec_error = bool(rec_errors and not old_rec_errors)
-                    if old_sig != new_sig or newly_introduced_rec_error:
-                        b_span = LineSpan(start_line=old_line, end_line=old_line)
-                        t_span = LineSpan(start_line=new_line, end_line=new_line)
-                        old_req = [p for p in old_params if "=" not in p and "?" not in p and "..." not in p]
-                        new_req = [p for p in new_params if "=" not in p and "?" not in p and "..." not in p]
-                        is_brk = (
-                            bool(rec_errors)
-                            or len(new_req) > len(old_req)
-                            or len(new_params) < len(old_params)
-                            or (old_ret != new_ret and old_ret is not None)
-                        )
-                        reason = f"Exported {kind} '{name}' signature changed from '{old_sig}' to '{new_sig}'."
-                        if rec_errors:
-                            reason += f" Recursive self-call bug: {rec_errors[0]}"
-                        eid = _register_symbol_evidence(fpath, b_span, t_span, f"- {old_sig}\n+ {new_sig}", reason)
-                        sc = SymbolSignatureChange(
-                            file_path=fpath,
-                            symbol_name=name,
-                            symbol_kind=kind,  # type: ignore[arg-type]
-                            change_kind="signature_changed",
-                            old_signature=old_sig,
-                            new_signature=new_sig,
-                            is_breaking_candidate=is_brk,
-                            is_public_api_export=True,
-                            public_api_exposure_reason=ts_export_reason,
-                            severity="high" if is_brk else "low",
-                            details=reason,
-                            base_line_span=b_span,
-                            target_line_span=t_span,
-                            evidence_ids=[eid],
-                        )
-                        symbol_changes.append(sc)
-                        fdelta.symbol_changes.append(sc)
-                        modified_symbol_names.add(name)
-
-            # 2. Added symbols
-            for name, (kind, new_line, new_sig, new_params, new_ret) in new_ts.items():
-                if name not in old_ts:
-                    t_span = LineSpan(start_line=new_line, end_line=new_line)
-                    reason = f"Public {kind} '{name}' was added in {fpath}."
-                    eid = _register_symbol_evidence(fpath, None, t_span, f"+ {new_sig}", reason)
-                    sc = SymbolSignatureChange(
-                        file_path=fpath,
-                        symbol_name=name,
-                        symbol_kind=kind,  # type: ignore[arg-type]
-                        change_kind="added",
-                        old_signature=None,
-                        new_signature=new_sig,
-                        is_breaking_candidate=False,
-                        is_public_api_export=True,
-                        public_api_exposure_reason=ts_export_reason,
-                        severity="low",
-                        details=reason,
                         target_line_span=t_span,
                         evidence_ids=[eid],
                     )
@@ -2458,30 +3381,69 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                     fdelta.symbol_changes.append(sc)
                     modified_symbol_names.add(name)
 
-                    _, rec_errors = rec_info.get(name, (False, []))
-                    if rec_errors:
-                        rec_reason = f"Broken recursive self-call in `{name}` ({fpath}): {rec_errors[0]}"
-                        rec_eid = _register_symbol_evidence(fpath, None, t_span, f"+ {new_sig}", rec_reason)
-                        rec_sc = SymbolSignatureChange(
-                            file_path=fpath,
-                            symbol_name=name,
-                            symbol_kind=kind,  # type: ignore[arg-type]
-                            change_kind="signature_changed",
-                            old_signature=None,
-                            new_signature=new_sig,
-                            is_breaking_candidate=True,
-                            is_public_api_export=True,
-                            public_api_exposure_reason=ts_export_reason,
-                            severity="high",
-                            details=rec_reason,
-                            target_line_span=t_span,
-                            evidence_ids=[rec_eid],
-                        )
-                        symbol_changes.append(rec_sc)
-                        fdelta.symbol_changes.append(rec_sc)
+            # 3. Added symbols
+            for name, new_sym in added_ml:
+                if new_sym.owner_type:
+                    symbol_owners[(fpath, name)] = new_sym.owner_type
+                symbol_arity_bounds[(fpath, name)] = (
+                    new_sym.required_param_count,
+                    len(new_sym.params),
+                    _is_ml_variadic(new_sym),
+                )
+                t_span = LineSpan(start_line=new_sym.start_line, end_line=new_sym.end_line)
+                is_pub_exp = new_sym.is_public_api
+                api_surf = "public_external" if is_pub_exp else "internal_only"
+                vis_label = "Public" if is_pub_exp else "Internal"
+                reason = f"{vis_label} {new_sym.symbol_kind} '{name}' was added in {fpath}."
+                eid = _register_symbol_evidence(fpath, None, t_span, f"+ {new_sym.signature_str}", reason)
+                sc = SymbolSignatureChange(
+                    file_path=fpath,
+                    symbol_name=name,
+                    symbol_kind=new_sym.symbol_kind,  # type: ignore[arg-type]
+                    change_kind="added",
+                    old_signature=None,
+                    new_signature=new_sym.signature_str,
+                    is_breaking_candidate=False,
+                    is_public_api_export=is_pub_exp,
+                    public_api_exposure_reason=new_sym.export_reason,
+                    api_surface=api_surf,  # type: ignore[arg-type]
+                    language_family=lang_family,
+                    severity="low",
+                    details=reason,
+                    target_line_span=t_span,
+                    evidence_ids=[eid],
+                )
+                symbol_changes.append(sc)
+                fdelta.symbol_changes.append(sc)
+                modified_symbol_names.add(name)
+
+                _, rec_errors = rec_info.get(name, (False, []))
+                if rec_errors:
+                    rec_reason = f"Broken recursive self-call in `{name}` ({fpath}): {rec_errors[0]}"
+                    rec_eid = _register_symbol_evidence(fpath, None, t_span, f"+ {new_sym.signature_str}", rec_reason)
+                    rec_sc = SymbolSignatureChange(
+                        file_path=fpath,
+                        symbol_name=name,
+                        symbol_kind=new_sym.symbol_kind,  # type: ignore[arg-type]
+                        change_kind="signature_changed",
+                        old_signature=None,
+                        new_signature=new_sym.signature_str,
+                        is_breaking_candidate=True,
+                        is_public_api_export=is_pub_exp,
+                        public_api_exposure_reason=new_sym.export_reason,
+                        api_surface=api_surf,  # type: ignore[arg-type]
+                        language_family=lang_family,
+                        severity="high",
+                        details=rec_reason,
+                        target_line_span=t_span,
+                        evidence_ids=[rec_eid],
+                    )
+                    symbol_changes.append(rec_sc)
+                    fdelta.symbol_changes.append(rec_sc)
 
     (
-        caller_impacts,
+        caller_impacts_by_key,
+        caller_totals_by_key,
         untested_symbols,
         doc_drift_items,
         unresolved_dynamic_calls,
@@ -2491,7 +3453,14 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
         symbol_changes,
         modified_symbol_names,
         new_py_symbols_by_qname=new_py_symbols_by_qname,
+        symbol_owners=symbol_owners,
+        symbol_arity_bounds=symbol_arity_bounds,
     )
+
+    caller_impacts: dict[str, list[CallerImpactItem]] = {}
+    for (_fpath_k, sym_k), clist in caller_impacts_by_key.items():
+        if sym_k not in caller_impacts or len(clist) > len(caller_impacts[sym_k]):
+            caller_impacts[sym_k] = clist
 
     # Assemble deterministic PotentialBreakingChangeFinding objects (requires human review!)
     breaking_findings: list[PotentialBreakingChangeFinding] = []
@@ -2501,7 +3470,9 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
             continue
         fid = f"brk_{b_idx:03d}"
         b_idx += 1
-        callers = caller_impacts.get(sc.symbol_name, [])
+        comp_key = (sc.file_path, sc.symbol_name)
+        callers = caller_impacts_by_key.get(comp_key, [])
+        total_matched = caller_totals_by_key.get(comp_key, len(callers))
         related_drift = [d for d in doc_drift_items if d.referenced_symbol == sc.symbol_name]
         related_dynamic = [
             d
@@ -2523,8 +3494,9 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
             )
         if callers:
             broken_callers = [c for c in callers if c.arity_mismatch_detected]
+            count_note = f"{total_matched}" if total_matched <= len(callers) else f"{total_matched} ({len(callers)} shown)"
             caller_summary = (
-                f"Detected {len(callers)} downstream call site(s) in repository "
+                f"Detected {count_note} downstream call site(s) in repository "
                 f"({len(broken_callers)} with proven argument/arity incompatibility: "
                 f"{', '.join(f'{c.caller_file}:{c.line_number}' for c in callers[:3])})."
             )
@@ -2568,6 +3540,8 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                 new_signature=sc.new_signature,
                 is_public_api_export=sc.is_public_api_export,
                 public_api_exposure_reason=sc.public_api_exposure_reason,
+                api_surface=sc.api_surface,
+                language_family=sc.language_family,
                 observed_facts=observed_facts,
                 model_interpretation=(
                     f"Deterministic AST analysis flagged `{sc.symbol_name}` in `{sc.file_path}` as a potential breaking change ({sc.details}). "
@@ -2575,6 +3549,7 @@ def run_structural_code_analysis(extraction: RawRangeExtraction) -> StructuralAn
                 ),
                 potential_risks_requiring_verification=risks,
                 affected_callers=callers,
+                total_callers_matched=total_matched,
                 unresolved_dynamic_calls=related_dynamic[:5],
                 doc_drift=related_drift,
                 evidence_ids=list(dict.fromkeys(sc.evidence_ids)),

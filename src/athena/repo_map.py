@@ -102,6 +102,23 @@ def build_repo_map(
         used += len(line) + 1
 
     map_text = "\n".join(lines)
+    try:
+        from athena.token_ledger import record_token_saving
+
+        root_p = Path(cg.repo_root)
+        raw_bytes = 0
+        counted: set[str] = set()
+        for n in cg.nodes:
+            if n.file_path not in counted:
+                counted.add(n.file_path)
+                try:
+                    raw_bytes += (root_p / n.file_path).stat().st_size
+                except OSError:
+                    pass
+        if raw_bytes > 0:
+            record_token_saving("map", cg.repo_root, raw_bytes, len(map_text))
+    except Exception:
+        pass
     return {
         "status": "ok",
         "repo_root": cg.repo_root,

@@ -318,7 +318,7 @@ def test_mcp_resources_prompts_toolsets_titles_and_transport_guards(
 
     async def _run() -> None:
         tools = await mcp_app.list_tools()
-        assert len(tools) == 13
+        assert len(tools) == 15
         supports_title = "title" in inspect.signature(mcp_app.tool).parameters
         if supports_title:
             for tool in tools:
@@ -465,7 +465,7 @@ def test_mcp_resources_prompts_toolsets_titles_and_transport_guards(
                         json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
                     )
                     assert r_tools.status_code == 200
-                    assert len(r_tools.json()["result"]["tools"]) == 13
+                    assert len(r_tools.json()["result"]["tools"]) == 15
                     r_res = await client.post(
                         "/mcp",
                         headers=headers,
@@ -492,7 +492,7 @@ def test_cli_doctor_and_scoped_stdio_session(
     doc = json.loads(capsys.readouterr().out)
     assert doc["athena_version"] == __version__
     assert doc["git"]["available"] is True
-    assert doc["mcp"]["registered_tools"] == 13
+    assert doc["mcp"]["registered_tools"] == 15
     assert doc["repository"]["is_valid_git_repo"] is True
 
     async def _stdio_check() -> None:

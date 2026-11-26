@@ -50,6 +50,10 @@ dev = [
 security = [
     "pip-audit==2.10.1",
 ]
+ast = [
+    "tree-sitter>=0.25.0",
+    "tree-sitter-language-pack>=1.0.0",
+]
 
 [project.scripts]
 athena = "athena.cli:main"

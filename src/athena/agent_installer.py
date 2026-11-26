@@ -38,7 +38,7 @@ description: Local-first evidence-backed code knowledge graph, breaking-change A
 """
 
 _HERMES_PLUGIN_YAML = """name: athena
-version: "1.3.2"
+version: "1.3.3"
 description: "Athena local-first code graph, repo map, and breaking-change guard for Hermes."
 entry: "__init__.py"
 hooks:
@@ -107,22 +107,29 @@ def main() -> int:
     except Exception:
         payload = {}
 
-    session_id = str(payload.get("session_id") or os.environ.get("ATHENA_SESSION_ID") or "default")
-    safe_sid = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_id)[:64]
+    session_id = str(payload.get("session_id") or os.environ.get("ATHENA_SESSION_ID") or "default").replace(chr(0), "")
+    safe_sid = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_id)[:64] or "default"
     state_dir = Path(os.environ.get("TMPDIR") or os.environ.get("TEMP") or "/tmp") / "athena_sessions"
     state_dir.mkdir(parents=True, exist_ok=True)
     state_file = state_dir / f"{safe_sid}.json"
 
-    event_name = str(payload.get("hook_event_name") or sys.argv[1] if len(sys.argv) > 1 else "SessionStart")
-    cwd = str(payload.get("cwd") or Path.cwd())
+    event_name = str(payload.get("hook_event_name") or (sys.argv[1] if len(sys.argv) > 1 else "SessionStart")).replace(chr(0), "")
+    raw_cwd = str(payload.get("cwd") or Path.cwd()).replace(chr(0), "").strip()
+    if raw_cwd.startswith("-"):
+        return 0
+    try:
+        cwd = str(Path(raw_cwd).resolve())
+    except OSError:
+        return 0
 
     if event_name == "SessionStart":
         try:
             proc = subprocess.run(
-                ["athena", "map", cwd, "--max-chars", "1800"],
+                [sys.executable, "-m", "athena", "map", cwd, "--max-chars", "1800"],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
+                errors="replace",
                 timeout=3,
                 check=False,
             )
@@ -133,7 +140,8 @@ def main() -> int:
         return 0
 
     if event_name == "PreToolUse":
-        tool_name = str(payload.get("tool_name") or "")
+        # Strictly advisory guidance; never overrides user permission or deny rules.
+        tool_name = str(payload.get("tool_name") or "").replace(chr(0), "")
         if tool_name in {"Grep", "Glob", "Read"} and not state_file.exists():
             state_file.write_text(json.dumps({"nudged": True}), encoding="utf-8")
             print(json.dumps({

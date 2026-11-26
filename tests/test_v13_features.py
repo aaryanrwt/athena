@@ -89,7 +89,7 @@ def polyglot_repo(tmp_path: Path) -> Path:
 
 
 def test_version_is_1_3_x() -> None:
-    assert __version__ == "1.3.2"
+    assert __version__ == "1.3.3"
 
 
 def test_evidence_store_canonical_ids_and_paging() -> None:
